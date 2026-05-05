@@ -1,13 +1,34 @@
-# Free bughouse player
+# Free Bughouse Player
 
-This is a little project dedicated for the house bughouse community containing the top players on the chesscom bughouse variant. The goal is to mimic
-the very confusing rule the [bughouse tournament](https://www.facebook.com/61565311126427/posts/122098056560510370/):
+This is a small project for the House Bughouse community (a Discord server with some of the strongest bughouse players from Chess.com). The main goal is pretty simple: give people a way to practice a very weird (and honestly confusing) tournament ruleset.
 
-- Promoting follows by the person promoting choosing one piece from the diagonal (opponent on other board) and taking this piece and putting it on the promotion square. The pawn is given to the player diagonally
+## Tournament Rule Set
 
-IMPORTANT: Note this can lead to illegal positions. The current implementation allows this leading to possible king captures, which result in a win.
+The implementation tries to follow the rules from this tournament announcement:
+https://www.facebook.com/61565311126427/posts/122098056560510370/
 
-- A mate is not allowed to be reached via placing a piece. Thus mates are required to be a standard move
+### Promotion Rules
 
+* When a pawn promotes, the player has to pick a piece from the *diagonal board* (your partner’s opponent).
+* That piece is placed on the promotion square.
+* The pawn is then given to the diagonally opposite player.
 
-This project is thought as a possiblity to train for the tournament as good as possible. I wish the best of luck to all players using this tool to train!
+**Important:**
+Yes, this can create *illegal positions*. That’s intentional. The current version allows this, including cases where a king can just be captured outright — which counts as a win.
+
+### Checkmate Rules
+
+* You’re **not allowed** to checkmate by placing a piece.
+* Checkmates have to come from a **normal move**.
+
+## Purpose
+
+This is mainly meant as a practice tool for anyone who wants to try out these rules without losing their mind in a real game first. If you’re playing in the tournament (or just curious), this should help you get used to the chaos.
+
+Good luck and have fun 🙂
+
+---
+
+## Note
+
+The code for this project was generated with the help of AI. I mainly focused on the design, rules, and overall idea behind it.
