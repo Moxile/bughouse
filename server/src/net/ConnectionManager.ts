@@ -23,6 +23,7 @@ import {
   applyGameDrop,
   applyGameMove,
   applyGamePromotion,
+  cancelGamePromotion,
 } from '../engine/game.js';
 import { randomUUID } from 'node:crypto';
 
@@ -73,6 +74,7 @@ export class ConnectionManager {
       case 'move': return this.handleMove(cs, msg);
       case 'drop': return this.handleDrop(cs, msg);
       case 'promotion-select': return this.handlePromotionSelect(cs, msg);
+      case 'cancel-promotion': return this.handlePromotionCancel(cs);
       case 'resign': return this.handleResign(cs);
       case 'chat': return this.handleChat(cs, msg);
     }
@@ -191,6 +193,19 @@ export class ConnectionManager {
       applyGamePromotion(room.game, seat, msg.diagonalSquare);
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
+      this.broadcastState(room);
+    } catch (e) {
+      const reason = e instanceof PromotionFlowError ? e.reason : 'illegal-promotion';
+      this.send(cs.ws, { type: 'error', reason });
+    }
+  }
+
+  private handlePromotionCancel(cs: ClientState): void {
+    if (!this.assertPlaying(cs)) return;
+    const room = cs.room!;
+    const seat = cs.seat!;
+    try {
+      cancelGamePromotion(room.game, seat);
       this.broadcastState(room);
     } catch (e) {
       const reason = e instanceof PromotionFlowError ? e.reason : 'illegal-promotion';

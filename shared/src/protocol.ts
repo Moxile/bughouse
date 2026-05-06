@@ -40,6 +40,10 @@ export type C_PromotionSelect = {
   diagonalSquare: Square;
 };
 
+export type C_CancelPromotion = {
+  type: 'cancel-promotion';
+};
+
 export type C_Resign = {
   type: 'resign';
 };
@@ -56,6 +60,7 @@ export type ClientMessage =
   | C_Move
   | C_Drop
   | C_PromotionSelect
+  | C_CancelPromotion
   | C_Resign
   | C_Chat;
 

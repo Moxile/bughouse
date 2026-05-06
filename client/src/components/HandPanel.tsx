@@ -14,9 +14,12 @@ type Props = {
   selectedPiece: DropPieceType | null;
   onSelect: (piece: DropPieceType | null) => void;
   canInteract: boolean;
+  canDrag?: boolean;
+  onDragStart?: (piece: DropPieceType) => void;
+  onDragEnd?: () => void;
 };
 
-export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract }: Props) {
+export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, onDragStart, onDragEnd }: Props) {
   return (
     <div style={{ display: 'flex', gap: 6, padding: '6px 0', flexWrap: 'wrap', minHeight: 44 }}>
       {PIECE_ORDER.map((pt) => {
@@ -26,10 +29,16 @@ export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract }:
         return (
           <button
             key={pt}
+            draggable={canDrag}
             onClick={() => {
               if (!canInteract) return;
               onSelect(isSelected ? null : pt);
             }}
+            onDragStart={canDrag ? (e) => {
+              e.dataTransfer.effectAllowed = 'move';
+              onDragStart?.(pt);
+            } : undefined}
+            onDragEnd={canDrag ? () => onDragEnd?.() : undefined}
             style={{
               fontSize: 26,
               lineHeight: 1,
@@ -37,7 +46,7 @@ export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract }:
               border: `2px solid ${isSelected ? '#2563eb' : '#555'}`,
               borderRadius: 6,
               background: isSelected ? '#dbeafe' : '#fff',
-              cursor: canInteract ? 'pointer' : 'default',
+              cursor: canDrag ? 'grab' : canInteract ? 'pointer' : 'default',
               position: 'relative',
             }}
             title={`Drop ${pt} (${count})`}

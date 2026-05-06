@@ -36,7 +36,9 @@ export type BoardState = {
   enPassant: Square | null; // square the pawn skipped over, or null
   // Pending promotion: the side-to-move just moved a pawn to its last rank;
   // the board is frozen for that color until a promotion-select arrives.
-  pendingPromotion: { from: Square; to: Square; color: Color } | null;
+  // capturedAtTo is the piece that occupied `to` before the pawn moved (null
+  // for a straight push), stored so the move can be cancelled/reverted.
+  pendingPromotion: { from: Square; to: Square; color: Color; capturedAtTo: Piece | null } | null;
   halfmoveClock: number; // unused for win logic but tracked for completeness
   fullmoveNumber: number;
 };

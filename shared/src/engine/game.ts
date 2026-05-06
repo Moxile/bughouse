@@ -26,6 +26,7 @@ import {
   applyMove,
   applyPromotionOnDiagonalBoard,
   applyPromotionOnPromotingBoard,
+  cancelPromotion,
 } from './apply.js';
 import { Move, hasLegalMove, inCheck, pseudoLegalMoves } from './moves.js';
 
@@ -343,6 +344,28 @@ export function applyGamePromotion(
   gs.hands[diagSeat].P += 1;
 
   return { takenType };
+}
+
+// Revert a pending promotion, restoring the pawn to its origin and un-doing
+// any capture that was made to reach the last rank (also removes the captured
+// piece from the partner's hand if it was credited there).
+export function cancelGamePromotion(gs: GameState, seat: Seat): void {
+  const boardId = seatBoard(seat);
+  const color = seatColor(seat);
+  const board = gs.boards[boardId];
+  if (!board.pendingPromotion) throw new PromotionFlowError('no-pending');
+  if (board.pendingPromotion.color !== color) throw new PromotionFlowError('wrong-color');
+
+  const { capturedAtTo } = board.pendingPromotion;
+  gs.boards[boardId] = cancelPromotion(board);
+
+  // If the promotion-triggering move captured a piece, that piece was credited
+  // to the partner's hand by applyGameMove — remove it now.
+  if (capturedAtTo && capturedAtTo.type !== 'K') {
+    const partner = partnerOf(seat);
+    const handed = capturedAtTo.wasPromoted ? 'P' : (capturedAtTo.type as DropPieceType);
+    gs.hands[partner][handed] = Math.max(0, gs.hands[partner][handed] - 1);
+  }
 }
 
 // True if the given seat's pawn can legally promote at all (i.e., the

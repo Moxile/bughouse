@@ -80,6 +80,7 @@ export function applyMove(state: BoardState, move: Move): ApplyMoveResult {
       from: move.from,
       to: move.to,
       color: piece.color,
+      capturedAtTo: captured,
     };
   } else {
     next.turn = otherColor(state.turn);
@@ -179,6 +180,18 @@ export class PromotionError extends Error {
   constructor(public reason: PromotionReason) {
     super(reason);
   }
+}
+
+// Revert a pending promotion move, restoring the pawn to its origin square and
+// replacing any piece it captured. The turn is unchanged (still the mover's).
+export function cancelPromotion(state: BoardState): BoardState {
+  if (!state.pendingPromotion) throw new PromotionError('no-pending');
+  const next = cloneBoardState(state);
+  const { from, to, color, capturedAtTo } = next.pendingPromotion!;
+  next.board[from] = { type: 'P', color, wasPromoted: false };
+  next.board[to] = capturedAtTo;
+  next.pendingPromotion = null;
+  return next;
 }
 
 // Replace the pawn at the promotion square with the chosen piece, switch turn.

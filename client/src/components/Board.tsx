@@ -11,6 +11,10 @@ import {
   sq,
 } from '@bughouse/shared';
 
+export type PremoveState =
+  | { type: 'move'; from: Square; to: Square }
+  | { type: 'drop'; piece: DropPieceType; to: Square };
+
 const PIECE_SYMBOLS: Record<string, string> = {
   wK: '♔', wQ: '♕', wR: '♖', wB: '♗', wN: '♘', wP: '♙',
   bK: '♚', bQ: '♛', bR: '♜', bB: '♝', bN: '♞', bP: '♟',
@@ -23,7 +27,7 @@ function pieceSymbol(p: Piece): string {
 export type BoardInteraction =
   | { mode: 'move'; onMove: (from: Square, to: Square) => void; getTargets: (from: Square) => Set<Square> }
   | { mode: 'drop'; piece: DropPieceType; dropTargets: Set<Square>; onDrop: (to: Square) => void }
-  | { mode: 'promotion-pick'; onPick: (sq: Square) => void };
+  | { mode: 'promotion-pick'; onPick: (sq: Square) => void; onCancel?: () => void };
 
 type Props = {
   board: BoardType;
@@ -34,8 +38,8 @@ type Props = {
   // If in promotion-pick mode, highlight the pieces eligible to pick (non-king, non-pawn of the given color).
   promotionPickColor?: Color;
   label?: string;
-  // Queued premove to highlight (from/to in coral).
-  premove?: { from: Square; to: Square } | null;
+  // Queued premove to highlight (from/to in coral for moves, to only for drops).
+  premove?: PremoveState | null;
   // Called when a click in move mode doesn't complete a new premove/move.
   onCancelPremove?: () => void;
 };
@@ -71,7 +75,10 @@ export function Board({
     if (!interaction) return;
     if (interaction.mode === 'promotion-pick') {
       const piece = board[s];
-      if (!piece || piece.color !== promotionPickColor || piece.type === 'K' || piece.type === 'P') return;
+      if (!piece || piece.color !== promotionPickColor || piece.type === 'K' || piece.type === 'P') {
+        interaction.onCancel?.();
+        return;
+      }
       interaction.onPick(s);
       return;
     }
@@ -139,7 +146,11 @@ export function Board({
             const isPromoPickable = interaction?.mode === 'promotion-pick'
               && piece && piece.color === promotionPickColor
               && piece.type !== 'K' && piece.type !== 'P';
-            const isPremove = !!premove && (premove.from === s || premove.to === s);
+            const isPremove = !!premove && (
+              premove.type === 'move'
+                ? (premove.from === s || premove.to === s)
+                : premove.to === s
+            );
 
             let bg = light ? '#f0d9b5' : '#b58863';
             if (isPremove)       bg = '#f4a07a';

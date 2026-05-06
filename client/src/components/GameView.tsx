@@ -13,7 +13,7 @@ import {
   sq,
 } from '@bughouse/shared';
 import type { GameStore } from '../hooks/useGame.js';
-import { Board, BoardInteraction } from './Board.js';
+import { Board, BoardInteraction, PremoveState } from './Board.js';
 import { HandPanel } from './HandPanel.js';
 import { PlayerStrip } from './PlayerStrip.js';
 import { ChatPanel } from './ChatPanel.js';
@@ -35,7 +35,8 @@ type Props = {
 export function GameView({ store, send }: Props) {
   const { game, yourSeat } = store;
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
-  const [premove, setPremove] = useState<{ from: Square; to: Square } | null>(null);
+  const [draggedHandPiece, setDraggedHandPiece] = useState<DropPieceType | null>(null);
+  const [premove, setPremove] = useState<PremoveState | null>(null);
 
   const isYourTurn = useCallback((boardId: BoardId): boolean => {
     if (!game || yourSeat === null) return false;
@@ -72,6 +73,19 @@ export function GameView({ store, send }: Props) {
     }
     return out;
   }, [game, yourSeat, isYourTurn]);
+
+  // For premove drops we don't know the future board state, so show any geometrically valid square.
+  const getPremoveDropTargets = useCallback((piece: DropPieceType): Set<Square> => {
+    const out = new Set<Square>();
+    for (let s = 0; s < 64; s++) {
+      if (piece === 'P') {
+        const r = s >> 3;
+        if (r === 0 || r === 7) continue;
+      }
+      out.add(s);
+    }
+    return out;
+  }, []);
 
   const getPremoveTargets = useCallback((boardId: BoardId, fromSq: Square): Set<Square> => {
     if (!game || yourSeat === null) return new Set();
@@ -111,7 +125,11 @@ export function GameView({ store, send }: Props) {
     const board = game.boards[boardId];
     if (board.pendingPromotion) return;
     if (board.turn !== seatColor(yourSeat)) return;
-    send({ type: 'move', boardId, from: premove.from, to: premove.to });
+    if (premove.type === 'move') {
+      send({ type: 'move', boardId, from: premove.from, to: premove.to });
+    } else {
+      send({ type: 'drop', boardId, piece: premove.piece, to: premove.to });
+    }
     setPremove(null);
   }, [game, yourSeat, premove, send]);
 
@@ -121,13 +139,19 @@ export function GameView({ store, send }: Props) {
   }, [send]);
 
   const handleDrop = useCallback((boardId: BoardId, to: Square) => {
-    if (selectedPiece === null) return;
-    send({ type: 'drop', boardId, piece: selectedPiece, to });
+    const piece = selectedPiece ?? draggedHandPiece;
+    if (piece === null) return;
+    send({ type: 'drop', boardId, piece, to });
     setSelectedPiece(null);
-  }, [send, selectedPiece]);
+    setDraggedHandPiece(null);
+  }, [send, selectedPiece, draggedHandPiece]);
 
   const handlePromoSelect = useCallback((diagonalSquare: Square) => {
     send({ type: 'promotion-select', diagonalSquare });
+  }, [send]);
+
+  const handlePromoCancel = useCallback(() => {
+    send({ type: 'cancel-promotion' });
   }, [send]);
 
   const handleResign = useCallback(() => {
@@ -158,25 +182,39 @@ export function GameView({ store, send }: Props) {
 
     // Diagonal board in promotion-pick mode: show pick interaction.
     if (inPromoMode && boardId === diagBoardId) {
-      return { mode: 'promotion-pick', onPick: handlePromoSelect };
+      return { mode: 'promotion-pick', onPick: handlePromoSelect, onCancel: handlePromoCancel };
     }
 
     if (seatBoard(yourSeat) !== boardId) return null;
+
+    const activePiece = selectedPiece ?? draggedHandPiece;
+
     if (!isYourTurn(boardId)) {
       if (game.boards[boardId].pendingPromotion) return null;
-      if (selectedPiece !== null) return null;
+      if (activePiece !== null) {
+        return {
+          mode: 'drop',
+          piece: activePiece,
+          dropTargets: getPremoveDropTargets(activePiece),
+          onDrop: (to) => {
+            setPremove({ type: 'drop', piece: activePiece, to });
+            setSelectedPiece(null);
+            setDraggedHandPiece(null);
+          },
+        };
+      }
       return {
         mode: 'move',
-        onMove: (from, to) => setPremove({ from, to }),
+        onMove: (from, to) => setPremove({ type: 'move', from, to }),
         getTargets: (from) => getPremoveTargets(boardId, from),
       };
     }
 
-    if (selectedPiece !== null) {
+    if (activePiece !== null) {
       return {
         mode: 'drop',
-        piece: selectedPiece,
-        dropTargets: getDropTargets(boardId, selectedPiece),
+        piece: activePiece,
+        dropTargets: getDropTargets(boardId, activePiece),
         onDrop: (to) => handleDrop(boardId, to),
       };
     }
@@ -243,6 +281,9 @@ export function GameView({ store, send }: Props) {
               selectedPiece={isMyHand ? selectedPiece : null}
               onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
               canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
+              canDrag={isMyHand && game.status === 'playing' && !inPromoMode}
+              onDragStart={isMyHand ? (p) => { setDraggedHandPiece(p); setPremove(null); } : undefined}
+              onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
             />
           );
         })()}
@@ -266,8 +307,14 @@ export function GameView({ store, send }: Props) {
 
       {/* Promotion pick prompt */}
       {inPromoMode && (
-        <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', padding: '8px 16px', borderRadius: 6, marginBottom: 8, fontWeight: 'bold' }}>
-          Click a piece on Board {(diagBoardId ?? 0) + 1} to complete your promotion.
+        <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', padding: '8px 16px', borderRadius: 6, marginBottom: 8, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span>Click a piece on Board {(diagBoardId ?? 0) + 1} to complete your promotion.</span>
+          <button
+            onClick={handlePromoCancel}
+            style={{ padding: '2px 10px', background: '#fff', border: '1px solid #f59e0b', borderRadius: 4, cursor: 'pointer', fontWeight: 'normal', fontSize: 13 }}
+          >
+            Cancel
+          </button>
         </div>
       )}
 
