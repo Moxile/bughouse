@@ -66,8 +66,8 @@ export type MoveOutcome = {
 };
 
 // Apply a move on `boardId`. Validates that `seat` is the side-to-move on
-// that board. Transfers any captured piece to the partner's hand (with
-// wasPromoted->P conversion). Throws on illegal moves.
+// that board. Transfers any captured piece to the partner's hand as-is.
+// Throws on illegal moves.
 export function applyGameMove(
   gs: GameState,
   seat: Seat,
@@ -111,12 +111,9 @@ export function applyGameMove(
   let capturedToPartnerHand: DropPieceType | null = null;
   if (result.captured) {
     const partner = partnerOf(seat);
-    // Captured piece type — but if wasPromoted, return as a pawn instead.
-    // Kings (kingCaptured) shouldn't be added to hand at all.
+    // Kings shouldn't be added to hand at all.
     if (result.captured.type !== 'K') {
-      const handed: DropPieceType = result.captured.wasPromoted
-        ? 'P'
-        : (result.captured.type as DropPieceType);
+      const handed = result.captured.type as DropPieceType;
       gs.hands[partner][handed] += 1;
       capturedToPartnerHand = handed;
     }
@@ -364,7 +361,7 @@ export function cancelGamePromotion(gs: GameState, seat: Seat): void {
   // to the partner's hand by applyGameMove — remove it now.
   if (capturedAtTo && capturedAtTo.type !== 'K') {
     const partner = partnerOf(seat);
-    const handed = capturedAtTo.wasPromoted ? 'P' : (capturedAtTo.type as DropPieceType);
+    const handed = capturedAtTo.type as DropPieceType;
     gs.hands[partner][handed] = Math.max(0, gs.hands[partner][handed] - 1);
   }
 }

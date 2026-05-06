@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 
-type Props = { onJoin: (code: string) => void };
+type Props = { onJoin: (code: string) => void; onRules: () => void };
 
-export function HomePage({ onJoin }: Props) {
+export function HomePage({ onJoin, onRules }: Props) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -39,6 +39,17 @@ export function HomePage({ onJoin }: Props) {
         {loading ? 'Creating…' : '+ Create game'}
       </button>
 
+      <button
+        onClick={onRules}
+        style={{
+          display: 'block', width: '100%', padding: '10px 0',
+          background: 'none', color: '#374151', border: '1px solid #d1d5db',
+          borderRadius: 8, fontSize: 15, cursor: 'pointer', marginBottom: 24,
+        }}
+      >
+        Rules
+      </button>
+
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <input
           value={code}
@@ -62,6 +73,17 @@ export function HomePage({ onJoin }: Props) {
           Join
         </button>
       </div>
+      <p style={{ marginTop: 48, color: '#888', fontSize: 13 }}>
+        Feel free to follow me on{' '}
+        <a href="https://github.com/Moxile" target="_blank" rel="noopener noreferrer" style={{ color: '#2563eb' }}>
+          GitHub
+        </a>
+        {' '}and don't forget to join{' '}
+        <a href="https://discord.gg/NbdDfJ4m22" target="_blank" rel="noopener noreferrer" style={{ color: '#5865f2' }}>
+          this Discord server
+        </a>
+        !
+      </p>
     </div>
   );
 }

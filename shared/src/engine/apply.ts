@@ -15,8 +15,8 @@ import { Move, hasLegalMove, inCheck } from './moves.js';
 
 export type ApplyMoveResult = {
   state: BoardState;
-  // The piece that was captured (if any). The bughouse layer is responsible
-  // for converting wasPromoted captures to a pawn before crediting hand.
+  // The piece that was captured (if any). The bughouse layer credits it to
+  // the partner's hand as-is.
   captured: Piece | null;
   // True if the move is a pawn-to-last-rank that triggers the promotion-swap.
   // When true, the returned state has pendingPromotion set and turn has NOT

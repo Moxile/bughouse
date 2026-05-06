@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { HomePage } from './components/HomePage.js';
+import { RulesPage } from './components/RulesPage.js';
 import { LobbyView } from './components/LobbyView.js';
 import { GameView } from './components/GameView.js';
 import { useGame } from './hooks/useGame.js';
@@ -7,6 +8,10 @@ import { useGame } from './hooks/useGame.js';
 function parseCode(): string | null {
   const m = location.pathname.match(/^\/g\/([A-Z0-9]{6})$/i);
   return m ? m[1]!.toUpperCase() : null;
+}
+
+function isRules(): boolean {
+  return location.pathname === '/rules';
 }
 
 function GamePage({ code }: { code: string }) {
@@ -37,18 +42,33 @@ function GamePage({ code }: { code: string }) {
 
 export function App() {
   const [code, setCode] = useState<string | null>(() => parseCode());
+  const [rules, setRules] = useState(() => isRules());
 
   const handleJoin = (c: string) => {
     history.pushState(null, '', `/g/${c}`);
     setCode(c);
   };
 
+  const handleRules = () => {
+    history.pushState(null, '', '/rules');
+    setRules(true);
+  };
+
+  const handleBack = () => {
+    history.pushState(null, '', '/');
+    setRules(false);
+  };
+
   useEffect(() => {
-    const onPop = () => setCode(parseCode());
+    const onPop = () => {
+      setCode(parseCode());
+      setRules(isRules());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   if (code) return <GamePage code={code} />;
-  return <HomePage onJoin={handleJoin} />;
+  if (rules) return <RulesPage onBack={handleBack} />;
+  return <HomePage onJoin={handleJoin} onRules={handleRules} />;
 }
