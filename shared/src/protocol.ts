@@ -53,6 +53,10 @@ export type C_Chat = {
   text: string;
 };
 
+export type C_Rematch = {
+  type: 'rematch';
+};
+
 export type ClientMessage =
   | C_Join
   | C_ClaimSeat
@@ -62,7 +66,8 @@ export type ClientMessage =
   | C_PromotionSelect
   | C_CancelPromotion
   | C_Resign
-  | C_Chat;
+  | C_Chat
+  | C_Rematch;
 
 // ---------- Server → Client ----------
 

@@ -7,7 +7,9 @@ import {
   S_State,
   S_Welcome,
   Seat,
+  SEATS,
   ServerMessage,
+  createGameState,
   partnerOf,
   teamOf,
 } from '@bughouse/shared';
@@ -77,6 +79,7 @@ export class ConnectionManager {
       case 'cancel-promotion': return this.handlePromotionCancel(cs);
       case 'resign': return this.handleResign(cs);
       case 'chat': return this.handleChat(cs, msg);
+      case 'rematch': return this.handleRematch(cs);
     }
   }
 
@@ -224,6 +227,59 @@ export class ConnectionManager {
       losingSeat: seat,
     };
     this.clocks.get(room.code)?.stopAll();
+    this.broadcastState(room);
+  }
+
+  private handleRematch(cs: ClientState): void {
+    if (!cs.room || cs.seat === null) return;
+    const room = cs.room;
+    if (room.game.status !== 'ended') return;
+
+    room.game.rematchVotes[cs.seat] = true;
+
+    const allVoted =
+      room.slots.size === 4 &&
+      SEATS.every((s) => room.game.rematchVotes[s]);
+
+    if (allVoted) {
+      this.startRematch(room);
+    } else {
+      this.broadcastState(room);
+    }
+  }
+
+  private startRematch(room: Room): void {
+    const now = Date.now();
+
+    // Swap seats within each board: 0↔1 (Board 0), 2↔3 (Board 1).
+    // This keeps the same team matchup but flips colors on each board.
+    const swapMap: Record<Seat, Seat> = { 0: 1, 1: 0, 2: 3, 3: 2 };
+    const newSlots = new Map<Seat, import('../game/LobbyManager.js').PlayerSlot>();
+    for (const [seat, slot] of room.slots) {
+      const newSeat = swapMap[seat];
+      newSlots.set(newSeat, { ...slot, seat: newSeat, ready: false });
+    }
+    room.slots = newSlots;
+
+    // Update seat on every active client connection.
+    for (const [, cs] of this.clients) {
+      if (cs.room?.code === room.code && cs.seat !== null) {
+        cs.seat = swapMap[cs.seat];
+      }
+    }
+
+    // Replace game state with a fresh game, started immediately.
+    room.game = createGameState(room.code, now);
+    room.game.status = 'playing';
+    room.game.startedAt = now;
+    room.game.lastClockUpdate = now;
+
+    // Reset clock manager.
+    this.clocks.get(room.code)?.stopAll();
+    const cm = new ClockManager();
+    this.clocks.set(room.code, cm);
+    cm.start(room.game, now, (seat) => this.handleFlag(room, seat));
+
     this.broadcastState(room);
   }
 

@@ -108,6 +108,8 @@ export type GameState = {
   result: GameResult | null;
   startedAt: number | null;
   initialClockMs: number;
+  // Tracks which seated players have voted for a rematch (status === 'ended').
+  rematchVotes: Record<Seat, boolean>;
 };
 
 // ---------------- Helpers ----------------

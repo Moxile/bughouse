@@ -33,15 +33,12 @@ type Props = {
   board: BoardType;
   perspective: Color;
   interaction: BoardInteraction | null;
-  // Highlight pending promotion square.
   pendingPromoSquare?: Square | null;
-  // If in promotion-pick mode, highlight the pieces eligible to pick (non-king, non-pawn of the given color).
   promotionPickColor?: Color;
   label?: string;
-  // Queued premove to highlight (from/to in coral for moves, to only for drops).
   premove?: PremoveState | null;
-  // Called when a click in move mode doesn't complete a new premove/move.
   onCancelPremove?: () => void;
+  cellSize?: number;
 };
 
 export function Board({
@@ -53,6 +50,7 @@ export function Board({
   label,
   premove,
   onCancelPremove,
+  cellSize = 68,
 }: Props) {
   const [selected, setSelected] = useState<Square | null>(null);
   const [dragFrom, setDragFrom] = useState<Square | 'hand' | null>(null);
@@ -130,11 +128,12 @@ export function Board({
   }, [interaction, dragFrom, legalTargets, board, promotionPickColor]);
 
   const isLight = (f: number, r: number) => (f + r) % 2 === 1;
+  const pieceSize = Math.round(cellSize * 0.676);
 
   return (
     <div style={{ display: 'inline-block', userSelect: 'none' }}>
       {label && <div style={{ textAlign: 'center', marginBottom: 4, fontWeight: 'bold' }}>{label}</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 56px)', gridTemplateRows: 'repeat(8, 56px)', border: '2px solid #555' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(8, ${cellSize}px)`, gridTemplateRows: `repeat(8, ${cellSize}px)`, border: '2px solid #555' }}>
         {ranks.map((r) =>
           files.map((f) => {
             const s = sq(f, r);
@@ -165,10 +164,10 @@ export function Board({
               <div
                 key={s}
                 style={{
-                  width: 56, height: 56, background: bg,
+                  width: cellSize, height: cellSize, background: bg,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: interaction ? 'pointer' : 'default',
-                  fontSize: 38, lineHeight: 1,
+                  fontSize: pieceSize, lineHeight: 1,
                   position: 'relative',
                 }}
                 onClick={() => handleSquareClick(s)}

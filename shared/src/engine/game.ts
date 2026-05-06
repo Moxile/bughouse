@@ -53,6 +53,7 @@ export function createGameState(code: string, now: number): GameState {
     result: null,
     startedAt: null,
     initialClockMs: INITIAL_CLOCK_MS,
+    rematchVotes: { 0: false, 1: false, 2: false, 3: false },
   };
 }
 

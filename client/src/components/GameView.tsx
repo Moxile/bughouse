@@ -158,6 +158,10 @@ export function GameView({ store, send }: Props) {
     if (window.confirm('Resign?')) send({ type: 'resign' });
   }, [send]);
 
+  const handleRematch = useCallback(() => {
+    send({ type: 'rematch' });
+  }, [send]);
+
   const handleSendChat = useCallback((text: string) => {
     send({ type: 'chat', text });
   }, [send]);
@@ -233,32 +237,30 @@ export function GameView({ store, send }: Props) {
     return seatColor((yourSeat + 2) % 4 as Seat);
   }
 
-  const boardEls = [0, 1].map((bid) => {
-    const boardId = bid as BoardId;
-    const board = game.boards[boardId];
+  function buildBoardEl(boardId: BoardId, cellSize: number) {
+    const board = game!.boards[boardId];
     const perspective = boardPerspective(boardId);
 
-    // Top player (opposite color from perspective).
     const topColor: Color = perspective === 'w' ? 'b' : 'w';
     const topSeat: Seat = boardId === 0 ? (topColor === 'w' ? 0 : 1) : (topColor === 'w' ? 3 : 2);
     const botSeat: Seat = boardId === 0 ? (perspective === 'w' ? 0 : 1) : (perspective === 'w' ? 3 : 2);
 
     const interaction = buildBoardInteraction(boardId);
     const pendingPromoSq = board.pendingPromotion?.to ?? null;
+    const isMyBoard = yourSeat !== null && seatBoard(yourSeat) === boardId;
+    const handSeat = isMyBoard ? yourSeat! : botSeat;
+    const isMyHand = isMyBoard && yourSeat !== null;
 
     return (
-      <div key={boardId} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {/* Top player strip */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <PlayerStrip seat={topSeat} store={store} isYou={yourSeat === topSeat} position="top" />
-        {/* Top hand (opponent hand — shown but not interactive for us) */}
         <HandPanel
-          hand={game.hands[topSeat]}
+          hand={game!.hands[topSeat]}
           color={seatColor(topSeat)}
           selectedPiece={null}
           onSelect={() => {}}
           canInteract={false}
         />
-        {/* Board */}
         <Board
           board={board.board}
           perspective={perspective}
@@ -268,36 +270,31 @@ export function GameView({ store, send }: Props) {
           label={`Board ${boardId + 1}`}
           premove={yourSeat !== null && seatBoard(yourSeat) === boardId ? premove : null}
           onCancelPremove={yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
+          cellSize={cellSize}
         />
-        {/* Bottom hand (our hand if this is our board, otherwise partner's) */}
-        {(() => {
-          const isMyBoard = yourSeat !== null && seatBoard(yourSeat) === boardId;
-          const handSeat = isMyBoard ? yourSeat! : botSeat;
-          const isMyHand = isMyBoard && yourSeat !== null;
-          return (
-            <HandPanel
-              hand={game.hands[handSeat]}
-              color={seatColor(handSeat)}
-              selectedPiece={isMyHand ? selectedPiece : null}
-              onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
-              canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
-              canDrag={isMyHand && game.status === 'playing' && !inPromoMode}
-              onDragStart={isMyHand ? (p) => { setDraggedHandPiece(p); setPremove(null); } : undefined}
-              onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
-            />
-          );
-        })()}
-        {/* Bottom player strip */}
+        <HandPanel
+          hand={game!.hands[handSeat]}
+          color={seatColor(handSeat)}
+          selectedPiece={isMyHand ? selectedPiece : null}
+          onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
+          canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
+          canDrag={isMyHand && game!.status === 'playing' && !inPromoMode}
+          onDragStart={isMyHand ? (p) => { setDraggedHandPiece(p); setPremove(null); } : undefined}
+          onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
+        />
         <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" />
       </div>
     );
-  });
+  }
+
+  const ownBoardId: BoardId = myBoardId ?? 0;
+  const partnerBoardId: BoardId = (1 - ownBoardId) as BoardId;
 
   const inCheckNotice = yourSeat !== null && game.status === 'playing' &&
     inCheck(game.boards[seatBoard(yourSeat)], seatColor(yourSeat));
 
   return (
-    <div style={{ padding: 16, fontFamily: 'sans-serif' }}>
+    <div style={{ padding: 16, fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       {/* Error toasts */}
       {store.errors.map((e, i) => (
         <div key={i} style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 12px', borderRadius: 6, marginBottom: 4, fontSize: 13 }}>
@@ -325,24 +322,50 @@ export function GameView({ store, send }: Props) {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 40, alignItems: 'flex-start' }}>
-        {boardEls}
+      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
+        {/* Main board (your board) — large */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {buildBoardEl(ownBoardId, 72)}
 
-        {/* Right sidebar: actions + chat */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 24 }}>
+          {/* Game controls below own board */}
           {game.status === 'ended' && game.result && (
-            <div style={{ background: '#f0fdf4', border: '2px solid #16a34a', padding: 16, borderRadius: 8, fontWeight: 'bold', textAlign: 'center' }}>
-              {yourSeat !== null && (Math.floor(yourSeat / 2) % 2 === game.result.winningTeam
-                ? '🏆 Your team wins!'
-                : 'Your team lost')
-              }
-              <br />
-              <span style={{ fontSize: 12, fontWeight: 400 }}>
-                {game.result.reason === 'king-capture' && 'King captured'}
-                {game.result.reason === 'time' && 'Time out'}
-                {game.result.reason === 'resign' && 'Resignation'}
-                {game.result.reason === 'disconnect' && 'Disconnect'}
-              </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+              <div style={{ background: '#f0fdf4', border: '2px solid #16a34a', padding: 12, borderRadius: 8, fontWeight: 'bold', textAlign: 'center' }}>
+                {yourSeat !== null && (Math.floor(yourSeat / 2) % 2 === game.result.winningTeam
+                  ? '🏆 Your team wins!'
+                  : 'Your team lost')
+                }
+                <br />
+                <span style={{ fontSize: 12, fontWeight: 400 }}>
+                  {game.result.reason === 'king-capture' && 'King captured'}
+                  {game.result.reason === 'time' && 'Time out'}
+                  {game.result.reason === 'resign' && 'Resignation'}
+                  {game.result.reason === 'disconnect' && 'Disconnect'}
+                </span>
+              </div>
+              {yourSeat !== null && (
+                <div style={{ textAlign: 'center' }}>
+                  <button
+                    onClick={handleRematch}
+                    disabled={game.rematchVotes[yourSeat]}
+                    style={{
+                      padding: '8px 20px',
+                      background: game.rematchVotes[yourSeat] ? '#d1fae5' : '#16a34a',
+                      color: game.rematchVotes[yourSeat] ? '#065f46' : '#fff',
+                      border: '1px solid #16a34a',
+                      borderRadius: 6,
+                      cursor: game.rematchVotes[yourSeat] ? 'default' : 'pointer',
+                      fontWeight: 'bold',
+                      width: '100%',
+                    }}
+                  >
+                    {game.rematchVotes[yourSeat] ? 'Rematch requested…' : 'Rematch'}
+                  </button>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                    {([0, 1, 2, 3] as const).filter((s) => game.rematchVotes[s]).length}/4 players ready
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -354,7 +377,11 @@ export function GameView({ store, send }: Props) {
               Resign
             </button>
           )}
+        </div>
 
+        {/* Right column: partner board (smaller) + chat below */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {buildBoardEl(partnerBoardId, 46)}
           <ChatPanel
             messages={store.chatMessages}
             onSend={handleSendChat}
