@@ -330,19 +330,29 @@ export function GameView({ store, send }: Props) {
           {/* Game controls below own board */}
           {game.status === 'ended' && game.result && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-              <div style={{ background: '#f0fdf4', border: '2px solid #16a34a', padding: 12, borderRadius: 8, fontWeight: 'bold', textAlign: 'center' }}>
-                {yourSeat !== null && (Math.floor(yourSeat / 2) % 2 === game.result.winningTeam
-                  ? '🏆 Your team wins!'
-                  : 'Your team lost')
-                }
-                <br />
-                <span style={{ fontSize: 12, fontWeight: 400 }}>
-                  {game.result.reason === 'king-capture' && 'King captured'}
-                  {game.result.reason === 'time' && 'Time out'}
-                  {game.result.reason === 'resign' && 'Resignation'}
-                  {game.result.reason === 'disconnect' && 'Disconnect'}
-                </span>
-              </div>
+              {(() => {
+                const isWin = yourSeat !== null && yourSeat % 2 === game.result!.winningTeam;
+                return (
+                  <div style={{
+                    background: isWin ? '#f0fdf4' : '#fef2f2',
+                    border: `2px solid ${isWin ? '#16a34a' : '#dc2626'}`,
+                    padding: 12,
+                    borderRadius: 8,
+                    fontWeight: 'bold',
+                    textAlign: 'center',
+                    color: isWin ? '#166534' : '#991b1b',
+                  }}>
+                    {yourSeat !== null && (isWin ? '🏆 Your team wins!' : 'Your team lost')}
+                    <br />
+                    <span style={{ fontSize: 12, fontWeight: 400 }}>
+                      {game.result!.reason === 'king-capture' && 'King captured'}
+                      {game.result!.reason === 'time' && 'Time out'}
+                      {game.result!.reason === 'resign' && 'Resignation'}
+                      {game.result!.reason === 'disconnect' && 'Disconnect'}
+                    </span>
+                  </div>
+                );
+              })()}
               {yourSeat !== null && (
                 <div style={{ textAlign: 'center' }}>
                   <button
