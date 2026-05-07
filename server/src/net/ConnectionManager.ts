@@ -196,6 +196,9 @@ export class ConnectionManager {
       applyGamePromotion(room.game, seat, msg.diagonalSquare);
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
+      if (room.game.status === 'ended') {
+        cm.stopAll();
+      }
       this.broadcastState(room);
     } catch (e) {
       const reason = e instanceof PromotionFlowError ? e.reason : 'illegal-promotion';

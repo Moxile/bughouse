@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BoardId,
   Color,
@@ -15,6 +15,7 @@ import {
 import type { GameStore } from '../hooks/useGame.js';
 import { Board, BoardInteraction, PremoveState } from './Board.js';
 import { HandPanel } from './HandPanel.js';
+import { ChessPiece, PieceType } from './ChessPiece.js';
 import { PlayerStrip } from './PlayerStrip.js';
 import { ChatPanel } from './ChatPanel.js';
 import { legalMoves, inCheck, pseudoLegalMoves } from '../lib/legalMoves.js';
@@ -237,9 +238,35 @@ function GameHeader({
   );
 }
 
+function useBoardLayout() {
+  const compute = () => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 1440;
+    const h = typeof window !== 'undefined' ? window.innerHeight : 900;
+    const chatWidth = Math.min(340, Math.max(240, Math.round(w * 0.20)));
+    // horizontal: outer padding (24*2) + 2 column gaps (24*2) + chat
+    const horizReserved = 48 + 48 + chatWidth;
+    const cByWidth = Math.floor((w - horizReserved) / 16);
+    // vertical: header(50) + notif(30) + main padding(40) + 2 strips(~96)
+    //         + label(20) + gaps(30) + 2 hands(1.7c+24)
+    // board = 8c. Total <= h  =>  c <= (h - 290) / 9.7
+    const cByHeight = Math.floor((h - 290) / 9.7);
+    const cellSize = Math.max(34, Math.min(82, Math.min(cByWidth, cByHeight)));
+    return { cellSize, chatWidth };
+  };
+
+  const [layout, setLayout] = useState(compute);
+  useEffect(() => {
+    const onResize = () => setLayout(compute());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return layout;
+}
+
 export function GameView({ store, send }: Props) {
   const { game, yourSeat } = store;
   const [colorScheme, setColorScheme] = useState<ColorScheme>(loadScheme);
+  const { cellSize, chatWidth } = useBoardLayout();
 
   const handleColorScheme = useCallback((s: ColorScheme) => {
     setColorScheme(s);
@@ -248,6 +275,8 @@ export function GameView({ store, send }: Props) {
 
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
   const [draggedHandPiece, setDraggedHandPiece] = useState<DropPieceType | null>(null);
+  const [handDragPos, setHandDragPos] = useState<{ x: number; y: number } | null>(null);
+  const handDragCleanupRef = useRef<(() => void) | null>(null);
   const [premove, setPremove] = useState<PremoveState | null>(null);
 
   const isYourTurn = useCallback((boardId: BoardId): boolean => {
@@ -349,6 +378,50 @@ export function GameView({ store, send }: Props) {
     setSelectedPiece(null);
     setDraggedHandPiece(null);
   }, [send, selectedPiece, draggedHandPiece]);
+
+  // Called by HandPanel when a drag starts (movement threshold exceeded).
+  // Registers global pointer handlers to show a floating piece and execute
+  // the drop via elementFromPoint when the pointer is released.
+  const handleHandDragStart = useCallback((piece: DropPieceType) => {
+    // Clean up any previous stale drag
+    handDragCleanupRef.current?.();
+
+    setDraggedHandPiece(piece);
+    setSelectedPiece(null);
+    setPremove(null);
+
+    const boardId = yourSeat !== null ? seatBoard(yourSeat) : null;
+
+    const onMove = (e: PointerEvent) => {
+      setHandDragPos({ x: e.clientX, y: e.clientY });
+    };
+
+    const onUp = (e: PointerEvent) => {
+      document.removeEventListener('pointermove', onMove);
+      handDragCleanupRef.current = null;
+      setDraggedHandPiece(null);
+      setHandDragPos(null);
+
+      if (boardId === null) return;
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const squareEl = (el as HTMLElement | null)?.closest('[data-square]') as HTMLElement | null;
+      if (!squareEl) return;
+      const toSq = parseInt(squareEl.dataset.square ?? '');
+      if (!isNaN(toSq)) {
+        send({ type: 'drop', boardId, piece, to: toSq });
+      }
+    };
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp, { once: true });
+    handDragCleanupRef.current = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+  }, [yourSeat, send]);
+
+  // Clean up lingering hand-drag listeners on unmount
+  useEffect(() => () => { handDragCleanupRef.current?.(); }, []);
 
   const handlePromoSelect = useCallback((diagonalSquare: Square) => {
     send({ type: 'promotion-select', diagonalSquare });
@@ -478,6 +551,7 @@ export function GameView({ store, send }: Props) {
             onSelect={() => {}}
             canInteract={false}
             large={large}
+            cellSize={cellSize}
           />
         </div>
 
@@ -502,9 +576,10 @@ export function GameView({ store, send }: Props) {
             onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
             canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
             canDrag={isMyHand && game!.status === 'playing' && !inPromoMode}
-            onDragStart={isMyHand ? (p) => { setDraggedHandPiece(p); setPremove(null); } : undefined}
+            onDragStart={isMyHand ? handleHandDragStart : undefined}
             onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
             large={large}
+            cellSize={cellSize}
           />
           <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" large={large} />
         </div>
@@ -523,6 +598,7 @@ export function GameView({ store, send }: Props) {
 
   const REASON_LABEL: Record<string, string> = {
     'king-capture': 'King captured',
+    'checkmate': 'Checkmate',
     'time': 'Time out',
     'resign': 'Resignation',
     'disconnect': 'Disconnect',
@@ -613,28 +689,40 @@ export function GameView({ store, send }: Props) {
         display: 'flex',
         alignItems: 'flex-start',
         justifyContent: 'center',
-        gap: 32,
-        padding: '20px 32px 32px',
+        gap: 24,
+        padding: '12px 24px 24px',
         position: 'relative', zIndex: 1,
         flexWrap: 'wrap',
       }}>
         {/* My board column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
           <SectionLabel text="MY BOARD" accent="#56dbd3" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {buildBoardEl(ownBoardId, 65, true)}
+            {buildBoardEl(ownBoardId, cellSize, true)}
           </div>
+        </div>
+
+        {/* Chat column (between boards) */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 8,
+          alignItems: 'stretch',
+          width: chatWidth,
+          marginTop: 28,
+        }}>
+          <ChatPanel
+            messages={store.chatMessages}
+            onSend={handleSendChat}
+            canSend={yourSeat !== null && game.status === 'playing'}
+          />
 
           {/* Result + rematch */}
           {isEnded && (
             <div style={{
-              width: '100%',
               background: isWin ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)',
               border: `1px solid ${isWin ? 'rgba(52,211,153,0.35)' : 'rgba(239,68,68,0.35)'}`,
               borderRadius: 10,
               padding: 16,
               textAlign: 'center',
-              marginTop: 8,
             }}>
               {yourSeat !== null && (
                 <div style={{
@@ -688,21 +776,38 @@ export function GameView({ store, send }: Props) {
           )}
         </div>
 
-        {/* Partner board column + chat */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+        {/* Partner board column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
           <SectionLabel text="PARTNER BOARD" accent="#a78bfa" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-            {buildBoardEl(partnerBoardId, 40)}
-          </div>
-          <div style={{ width: '100%' }}>
-            <ChatPanel
-              messages={store.chatMessages}
-              onSend={handleSendChat}
-              canSend={yourSeat !== null && game.status === 'playing'}
-            />
+            {buildBoardEl(partnerBoardId, cellSize, true)}
           </div>
         </div>
       </main>
+
+      {/* Floating piece during hand-piece drag */}
+      {draggedHandPiece && handDragPos && yourSeat !== null && (() => {
+        const dragSize = Math.round(cellSize * 0.95);
+        return (
+          <div style={{
+            position: 'fixed',
+            left: handDragPos.x - dragSize / 2,
+            top: handDragPos.y - dragSize / 2,
+            width: dragSize,
+            height: dragSize,
+            pointerEvents: 'none',
+            zIndex: 1000,
+            filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.75))',
+            willChange: 'transform',
+          }}>
+            <ChessPiece
+              piece={draggedHandPiece as PieceType}
+              color={seatColor(yourSeat)}
+              size={dragSize}
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -30,7 +30,7 @@ describe('captures-to-partner', () => {
     expect(gs.hands[0].N).toBe(0);
   });
 
-  it('captured wasPromoted piece returns as a pawn to partner hand', () => {
+  it('captured wasPromoted piece keeps its promoted type in partner hand', () => {
     const gs = emptyGame();
     gs.boards[0] = makeBoard(
       [
@@ -43,8 +43,8 @@ describe('captures-to-partner', () => {
     );
     const m = pseudoLegalMoves(gs.boards[0]).find((m) => m.from === S('e2') && m.to === S('e5'))!;
     applyGameMove(gs, 0 as Seat, m);
-    expect(gs.hands[2].P).toBe(1);
-    expect(gs.hands[2].Q).toBe(0);
+    expect(gs.hands[2].Q).toBe(1);
+    expect(gs.hands[2].P).toBe(0);
   });
 });
 
@@ -242,9 +242,9 @@ describe('promotion swap', () => {
     // Move the rook to e8 capturing the wasPromoted queen.
     const cap = pseudoLegalMoves(gs.boards[0]).find((m) => m.from === S('e1') && m.to === S('e8'))!;
     applyGameMove(gs, 1 as Seat, cap);
-    // Partner of seat 1 is seat 3. Should receive a PAWN (not a queen).
-    expect(gs.hands[3].P).toBe(2); // 1 from earlier promotion + 1 from this capture
-    expect(gs.hands[3].Q).toBe(0);
+    // Partner of seat 1 is seat 3. Should receive a QUEEN (promoted type is kept).
+    expect(gs.hands[3].Q).toBe(1);
+    expect(gs.hands[3].P).toBe(1); // only the 1 from the earlier promotion swap
   });
 });
 

@@ -22,7 +22,7 @@ type Props = {
 function Clock({ ms, active, large }: { ms: number; active: boolean; large?: boolean }) {
   const critical = ms < 10_000;
   const dangerous = ms < 30_000;
-  const fontSize = large ? 36 : 26;
+  const fontSize = large ? 22 : 18;
 
   const textColor = critical
     ? '#ff5757'
@@ -57,15 +57,15 @@ function Clock({ ms, active, large }: { ms: number; active: boolean; large?: boo
       fontWeight: 700,
       letterSpacing: -0.5,
       lineHeight: 1,
-      padding: large ? '10px 14px' : '6px 10px',
-      borderRadius: 8,
+      padding: large ? '5px 9px' : '4px 7px',
+      borderRadius: 7,
       background: bgColor,
       border: `1px solid ${borderColor}`,
       color: textColor,
       boxShadow: glow,
       transition: 'all 200ms ease',
       fontVariantNumeric: 'tabular-nums',
-      minWidth: large ? 120 : 88,
+      minWidth: large ? 78 : 64,
       textAlign: 'center',
       flexShrink: 0,
     }}>
@@ -85,8 +85,8 @@ export function PlayerStrip({ seat, store, isYou, position, large }: Props) {
     store.game.boards[seat < 2 ? 0 : 1].turn === (seat === 0 || seat === 3 ? 'w' : 'b');
 
   const avatar = SEAT_AVATAR[seat];
-  const avatarSize = large ? 38 : 28;
-  const fontSize = large ? 15 : 12;
+  const avatarSize = large ? 30 : 24;
+  const fontSize = large ? 13 : 11;
 
   const borderRadius = position === 'top'
     ? '8px 8px 0 0'

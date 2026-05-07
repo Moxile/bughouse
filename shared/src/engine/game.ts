@@ -111,7 +111,7 @@ export function applyGameMove(
   let capturedToPartnerHand: DropPieceType | null = null;
   if (result.captured) {
     const partner = partnerOf(seat);
-    // Kings shouldn't be added to hand at all.
+    // Kings don't go to hand. Promoted pieces revert to pawns when captured.
     if (result.captured.type !== 'K') {
       const handed = result.captured.type as DropPieceType;
       gs.hands[partner][handed] += 1;
@@ -129,6 +129,17 @@ export function applyGameMove(
       losingSeat: seatOnBoard(boardId, expectedColor === 'w' ? 'b' : 'w'),
       boardId,
     };
+  } else if (!result.triggeredPromotion) {
+    const oppColor: Color = expectedColor === 'w' ? 'b' : 'w';
+    if (inCheck(result.state, oppColor) && !hasLegalMove(result.state)) {
+      gs.status = 'ended';
+      gs.result = {
+        winningTeam: teamOf(seat),
+        reason: 'checkmate',
+        losingSeat: seatOnBoard(boardId, oppColor),
+        boardId,
+      };
+    }
   }
 
   return {
@@ -340,6 +351,17 @@ export function applyGamePromotion(
 
   // Add a pawn to the diagonal opponent's hand.
   gs.hands[diagSeat].P += 1;
+
+  const oppColor: Color = color === 'w' ? 'b' : 'w';
+  if (inCheck(promotedAfter, oppColor) && !hasLegalMove(promotedAfter)) {
+    gs.status = 'ended';
+    gs.result = {
+      winningTeam: teamOf(seat),
+      reason: 'checkmate',
+      losingSeat: seatOnBoard(boardId, oppColor),
+      boardId,
+    };
+  }
 
   return { takenType };
 }

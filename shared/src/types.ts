@@ -83,6 +83,7 @@ export type GameStatus = 'lobby' | 'playing' | 'ended';
 
 export type GameResultReason =
   | 'king-capture'
+  | 'checkmate'
   | 'time'
   | 'resign'
   | 'disconnect';

@@ -45,6 +45,7 @@ describe('applyMove basics', () => {
       from: S('e7'),
       to: S('e8'),
       color: 'w',
+      capturedAtTo: null,
     });
   });
 
