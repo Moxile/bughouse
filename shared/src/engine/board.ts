@@ -41,6 +41,7 @@ export function startingBoardState(): BoardState {
     pendingPromotion: null,
     halfmoveClock: 0,
     fullmoveNumber: 1,
+    lastMove: null,
   };
 }
 
@@ -57,6 +58,7 @@ export function cloneBoardState(s: BoardState): BoardState {
     pendingPromotion: s.pendingPromotion ? { ...s.pendingPromotion } : null,
     halfmoveClock: s.halfmoveClock,
     fullmoveNumber: s.fullmoveNumber,
+    lastMove: s.lastMove ? { ...s.lastMove } : null,
   };
 }
 

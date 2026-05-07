@@ -18,7 +18,7 @@ import { HandPanel } from './HandPanel.js';
 import { ChessPiece, PieceType } from './ChessPiece.js';
 import { PlayerStrip } from './PlayerStrip.js';
 import { ChatPanel } from './ChatPanel.js';
-import { legalMoves, inCheck, pseudoLegalMoves } from '../lib/legalMoves.js';
+import { legalMoves, pseudoLegalMoves } from '../lib/legalMoves.js';
 import { COLOR_SCHEMES, ColorScheme, loadScheme, saveScheme } from '../themes.js';
 
 type Props = {
@@ -552,6 +552,7 @@ export function GameView({ store, send }: Props) {
             canInteract={false}
             large={large}
             cellSize={cellSize}
+            colorScheme={colorScheme}
           />
         </div>
 
@@ -565,6 +566,7 @@ export function GameView({ store, send }: Props) {
           onCancelPremove={yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
           cellSize={cellSize}
           colorScheme={colorScheme}
+          lastMove={board.lastMove}
         />
 
         {/* Bottom player card */}
@@ -580,6 +582,7 @@ export function GameView({ store, send }: Props) {
             onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
             large={large}
             cellSize={cellSize}
+            colorScheme={colorScheme}
           />
           <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" large={large} />
         </div>
@@ -589,9 +592,6 @@ export function GameView({ store, send }: Props) {
 
   const ownBoardId: BoardId = myBoardId ?? 0;
   const partnerBoardId: BoardId = (1 - ownBoardId) as BoardId;
-
-  const inCheckNotice = yourSeat !== null && game.status === 'playing' &&
-    inCheck(game.boards[seatBoard(yourSeat)], seatColor(yourSeat));
 
   const isEnded = game.status === 'ended' && game.result;
   const isWin = isEnded && yourSeat !== null && yourSeat % 2 === game.result!.winningTeam;
@@ -627,61 +627,6 @@ export function GameView({ store, send }: Props) {
         onColorScheme={handleColorScheme}
       />
 
-      {/* Notification strip */}
-      {(store.errors.length > 0 || inPromoMode || inCheckNotice) && (
-        <div style={{
-          display: 'flex', flexDirection: 'column', gap: 6,
-          padding: '8px 24px',
-          position: 'relative', zIndex: 5,
-        }}>
-          {store.errors.map((e, i) => (
-            <div key={i} style={{
-              background: 'rgba(239,68,68,0.12)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              color: '#ff8a8a',
-              padding: '6px 14px', borderRadius: 6, fontSize: 13,
-              fontFamily: "'Geist', 'Inter', sans-serif",
-            }}>
-              {e}
-            </div>
-          ))}
-          {inPromoMode && (
-            <div style={{
-              background: 'rgba(86,219,211,0.1)',
-              border: '1px solid rgba(86,219,211,0.3)',
-              padding: '8px 16px', borderRadius: 6,
-              fontFamily: "'Geist', 'Inter', sans-serif",
-              fontSize: 13, color: '#56dbd3',
-              display: 'flex', alignItems: 'center', gap: 12,
-            }}>
-              <span>Click a piece on Board {(diagBoardId ?? 0) + 1} to complete your promotion.</span>
-              <button
-                onClick={handlePromoCancel}
-                style={{
-                  padding: '2px 10px',
-                  background: 'transparent',
-                  border: '1px solid rgba(86,219,211,0.4)',
-                  borderRadius: 4, cursor: 'pointer',
-                  fontSize: 12, color: '#56dbd3',
-                  fontFamily: "'Geist', 'Inter', sans-serif",
-                }}
-              >Cancel</button>
-            </div>
-          )}
-          {inCheckNotice && !inPromoMode && (
-            <div style={{
-              background: 'rgba(239,68,68,0.12)',
-              border: '1px solid rgba(239,68,68,0.35)',
-              padding: '6px 16px', borderRadius: 6,
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 12, fontWeight: 700, color: '#ff5757',
-              letterSpacing: 0.5,
-            }}>
-              YOU ARE IN CHECK
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Main boards area */}
       <main style={{

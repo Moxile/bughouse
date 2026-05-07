@@ -1,6 +1,14 @@
 import React from 'react';
 import { Color, DropPieceType, Hand } from '@bughouse/shared';
 import { ChessPiece, PieceType } from './ChessPiece.js';
+import { ColorScheme, DEFAULT_SCHEME } from '../themes.js';
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
 
 const PIECE_ORDER: DropPieceType[] = ['Q', 'R', 'B', 'N', 'P'];
 const DRAG_PX = 5;
@@ -16,9 +24,11 @@ type Props = {
   cellSize?: number;
   onDragStart?: (piece: DropPieceType) => void;
   onDragEnd?: () => void;
+  colorScheme?: ColorScheme;
 };
 
-export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, large, cellSize, onDragStart, onDragEnd }: Props) {
+export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, large, cellSize, onDragStart, onDragEnd, colorScheme = DEFAULT_SCHEME }: Props) {
+  const cs = colorScheme;
   const sz = cellSize !== undefined
     ? Math.max(40, Math.round(cellSize * 0.85))
     : (large ? 44 : 32);
@@ -90,14 +100,14 @@ export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, c
               height: sz,
               borderRadius: 6,
               border: isSelected
-                ? '1px solid #56dbd3'
-                : '1px solid rgba(255,255,255,0.08)',
+                ? `1px solid ${cs.selected.replace(/[\d.]+\)$/, '0.8)')}`
+                : `1px solid ${hexToRgba(cs.dark, 0.35)}`,
               background: isSelected
-                ? 'rgba(86,219,211,0.16)'
-                : 'rgba(255,255,255,0.04)',
+                ? cs.selected
+                : hexToRgba(cs.light, 0.10),
               cursor: canDrag ? 'grab' : canInteract ? 'pointer' : 'default',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxShadow: isSelected ? '0 0 0 2px rgba(86,219,211,0.3)' : 'none',
+              boxShadow: isSelected ? `0 0 0 2px ${cs.selected.replace(/[\d.]+\)$/, '0.3)')}` : 'none',
               transition: 'border-color 120ms ease, background 120ms ease, box-shadow 120ms ease',
               padding: 3,
               touchAction: 'none',

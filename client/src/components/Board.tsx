@@ -31,6 +31,7 @@ type Props = {
   onCancelPremove?: () => void;
   cellSize?: number;
   colorScheme?: ColorScheme;
+  lastMove?: { from: Square; to: Square } | null;
 };
 
 const DRAG_PX = 5;
@@ -46,6 +47,7 @@ export function Board({
   onCancelPremove,
   cellSize = 65,
   colorScheme = DEFAULT_SCHEME,
+  lastMove,
 }: Props) {
   const cs = colorScheme;
   const [selected, setSelected] = useState<Square | null>(null);
@@ -259,6 +261,11 @@ export function Board({
                   position: 'relative',
                 }}
               >
+                {/* Last move highlight */}
+                {lastMove && (lastMove.from === s || lastMove.to === s) && (
+                  <div style={{ position: 'absolute', inset: 0, background: cs.lastMove, pointerEvents: 'none' }} />
+                )}
+
                 {/* Premove highlight */}
                 {isPremove && (
                   <div style={{ position: 'absolute', inset: 0, background: 'rgba(167,139,250,0.45)', pointerEvents: 'none' }} />

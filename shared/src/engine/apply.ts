@@ -87,6 +87,7 @@ export function applyMove(state: BoardState, move: Move): ApplyMoveResult {
     if (next.turn === 'w') next.fullmoveNumber += 1;
   }
 
+  next.lastMove = { from: move.from, to: move.to };
   return { state: next, captured, triggeredPromotion, kingCaptured };
 }
 
@@ -160,6 +161,7 @@ export function applyDropRaw(
   if (next.turn === 'w') next.fullmoveNumber += 1;
   next.enPassant = null;
   next.halfmoveClock = 0;
+  next.lastMove = { from: drop.to, to: drop.to };
   return next;
 }
 
@@ -191,6 +193,7 @@ export function cancelPromotion(state: BoardState): BoardState {
   next.board[from] = { type: 'P', color, wasPromoted: false };
   next.board[to] = capturedAtTo;
   next.pendingPromotion = null;
+  next.lastMove = null;
   return next;
 }
 
@@ -202,12 +205,13 @@ export function applyPromotionOnPromotingBoard(
 ): BoardState {
   if (!state.pendingPromotion) throw new PromotionError('no-pending');
   const next = cloneBoardState(state);
-  const { to, color } = next.pendingPromotion!;
+  const { from, to, color } = next.pendingPromotion!;
   next.board[to] = { type: chosenType, color, wasPromoted: true };
   next.pendingPromotion = null;
   next.turn = otherColor(color);
   if (next.turn === 'w') next.fullmoveNumber += 1;
   next.enPassant = null;
+  next.lastMove = { from, to };
   return next;
 }
 

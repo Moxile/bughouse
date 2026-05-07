@@ -236,6 +236,7 @@ function isAttacked(
     pendingPromotion: null,
     halfmoveClock: 0,
     fullmoveNumber: 1,
+    lastMove: null,
   };
   // Reuse the engine's check via isSquareAttacked by importing... but that
   // would be circular. Easiest: a tiny inline.

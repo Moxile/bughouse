@@ -24,6 +24,7 @@ export function makeBoard(
     pendingPromotion: opts.pendingPromotion ?? null,
     halfmoveClock: opts.halfmoveClock ?? 0,
     fullmoveNumber: opts.fullmoveNumber ?? 1,
+    lastMove: opts.lastMove ?? null,
   };
 }
 

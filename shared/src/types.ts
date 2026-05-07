@@ -41,6 +41,9 @@ export type BoardState = {
   pendingPromotion: { from: Square; to: Square; color: Color; capturedAtTo: Piece | null } | null;
   halfmoveClock: number; // unused for win logic but tracked for completeness
   fullmoveNumber: number;
+  // The origin and destination of the most recent move/drop on this board.
+  // For drops, from === to (only the landing square is highlighted).
+  lastMove: { from: Square; to: Square } | null;
 };
 
 // Bughouse seating:
