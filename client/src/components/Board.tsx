@@ -3,26 +3,18 @@ import {
   Board as BoardType,
   Color,
   DropPieceType,
-  Hand,
   Piece,
   Square,
   fileOf,
   rankOf,
   sq,
 } from '@bughouse/shared';
+import { ChessPiece, PieceType } from './ChessPiece.js';
+import { ColorScheme, DEFAULT_SCHEME } from '../themes.js';
 
 export type PremoveState =
   | { type: 'move'; from: Square; to: Square }
   | { type: 'drop'; piece: DropPieceType; to: Square };
-
-const PIECE_SYMBOLS: Record<string, string> = {
-  wK: '♔', wQ: '♕', wR: '♖', wB: '♗', wN: '♘', wP: '♙',
-  bK: '♚', bQ: '♛', bR: '♜', bB: '♝', bN: '♞', bP: '♟',
-};
-
-function pieceSymbol(p: Piece): string {
-  return PIECE_SYMBOLS[`${p.color}${p.type}`] ?? '?';
-}
 
 export type BoardInteraction =
   | { mode: 'move'; onMove: (from: Square, to: Square) => void; getTargets: (from: Square) => Set<Square> }
@@ -39,6 +31,7 @@ type Props = {
   premove?: PremoveState | null;
   onCancelPremove?: () => void;
   cellSize?: number;
+  colorScheme?: ColorScheme;
 };
 
 export function Board({
@@ -50,8 +43,10 @@ export function Board({
   label,
   premove,
   onCancelPremove,
-  cellSize = 68,
+  cellSize = 65,
+  colorScheme = DEFAULT_SCHEME,
 }: Props) {
+  const cs = colorScheme;
   const [selected, setSelected] = useState<Square | null>(null);
   const [dragFrom, setDragFrom] = useState<Square | 'hand' | null>(null);
 
@@ -81,11 +76,10 @@ export function Board({
       return;
     }
     if (interaction.mode === 'drop') {
-      if (board[s]) return; // occupied
+      if (board[s]) return;
       interaction.onDrop(s);
       return;
     }
-    // Move mode: cancel any queued premove on every click; onMove will re-set one if applicable.
     onCancelPremove?.();
     const piece = board[s];
     if (selected === null) {
@@ -96,7 +90,7 @@ export function Board({
         interaction.onMove(selected, s);
         setSelected(null);
       } else if (piece) {
-        setSelected(s); // re-select another piece
+        setSelected(s);
       } else {
         setSelected(null);
       }
@@ -128,12 +122,28 @@ export function Board({
   }, [interaction, dragFrom, legalTargets, board, promotionPickColor]);
 
   const isLight = (f: number, r: number) => (f + r) % 2 === 1;
-  const pieceSize = Math.round(cellSize * 0.676);
+  const pieceSize = Math.round(cellSize * 0.82);
+  const coordSize = Math.max(8, Math.round(cellSize * 0.18));
 
   return (
     <div style={{ display: 'inline-block', userSelect: 'none' }}>
-      {label && <div style={{ textAlign: 'center', marginBottom: 4, fontWeight: 'bold' }}>{label}</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(8, ${cellSize}px)`, gridTemplateRows: `repeat(8, ${cellSize}px)`, border: '2px solid #555' }}>
+      {label && (
+        <div style={{
+          textAlign: 'center', marginBottom: 6,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 10, fontWeight: 700, letterSpacing: 1.5,
+          color: 'rgba(255,255,255,0.4)',
+          textTransform: 'uppercase',
+        }}>{label}</div>
+      )}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(8, ${cellSize}px)`,
+        gridTemplateRows: `repeat(8, ${cellSize}px)`,
+        borderRadius: 6,
+        overflow: 'hidden',
+        boxShadow: '0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.07)',
+      }}>
         {ranks.map((r) =>
           files.map((f) => {
             const s = sq(f, r);
@@ -151,20 +161,17 @@ export function Board({
                 : premove.to === s
             );
 
-            let bg = light ? '#f0d9b5' : '#b58863';
-            if (isPremove)       bg = '#f4a07a';
-            if (isSelected)      bg = '#f6f669';
-            if (isTarget)        bg = light ? '#cdd16e' : '#aaa23a';
-            if (isPending)       bg = '#ff9f00';
-            if (isPromoPickable) bg = '#60c0ff';
-
             const canDrag = interaction?.mode === 'move' && piece !== null;
+
+            const showRankLabel = f === (perspective === 'w' ? 0 : 7);
+            const showFileLabel = r === (perspective === 'w' ? 0 : 7);
 
             return (
               <div
                 key={s}
                 style={{
-                  width: cellSize, height: cellSize, background: bg,
+                  width: cellSize, height: cellSize,
+                  background: light ? cs.light : cs.dark,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: interaction ? 'pointer' : 'default',
                   fontSize: pieceSize, lineHeight: 1,
@@ -174,31 +181,89 @@ export function Board({
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => handleDrop(e, s)}
               >
-                {piece && (
-                  <span
-                    draggable={canDrag}
-                    onDragStart={canDrag ? (e) => handleDragStart(e, s) : undefined}
-                    style={{ cursor: canDrag ? 'grab' : undefined }}
-                  >
-                    {pieceSymbol(piece)}
-                  </span>
+                {/* Premove highlight */}
+                {isPremove && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(167,139,250,0.45)', pointerEvents: 'none' }} />
                 )}
-                {isTarget && !piece && (
-                  <div style={{
-                    position: 'absolute', width: 18, height: 18, borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.2)',
-                  }} />
+
+                {/* Selection highlight */}
+                {isSelected && (
+                  <div style={{ position: 'absolute', inset: 0, background: cs.selected, boxShadow: `inset 0 0 0 3px ${cs.selected.replace(/[\d.]+\)$/, '1)')}`, pointerEvents: 'none' }} />
                 )}
-                {/* Rank/file labels on outer edges */}
-                {f === (perspective === 'w' ? 0 : 7) && (
-                  <span style={{ position: 'absolute', top: 2, left: 3, fontSize: 11, color: light ? '#b58863' : '#f0d9b5', fontWeight: 'bold' }}>
+
+                {/* Legal target indicator */}
+                {isTarget && (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+                    {piece ? (
+                      <div style={{ width: '100%', height: '100%', boxShadow: `inset 0 0 0 4px ${cs.legal.replace(/[\d.]+\)$/, '0.8)')}` }} />
+                    ) : (
+                      <div style={{ width: cellSize * 0.32, height: cellSize * 0.32, borderRadius: '50%', background: cs.legal }} />
+                    )}
+                  </div>
+                )}
+
+                {/* Pending promotion square */}
+                {isPending && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,159,0,0.55)', pointerEvents: 'none' }} />
+                )}
+
+                {/* Promotion pick highlight */}
+                {isPromoPickable && (
+                  <div style={{ position: 'absolute', inset: 0, background: cs.selected, pointerEvents: 'none' }} />
+                )}
+
+                {/* Rank label (left edge) */}
+                {showRankLabel && (
+                  <span style={{
+                    position: 'absolute', left: 3, top: 2,
+                    fontSize: coordSize,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontWeight: 600,
+                    color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)',
+                    pointerEvents: 'none',
+                    lineHeight: 1,
+                    zIndex: 2,
+                  }}>
                     {r + 1}
                   </span>
                 )}
-                {r === (perspective === 'w' ? 0 : 7) && (
-                  <span style={{ position: 'absolute', bottom: 2, right: 3, fontSize: 11, color: light ? '#b58863' : '#f0d9b5', fontWeight: 'bold' }}>
+
+                {/* File label (bottom edge) */}
+                {showFileLabel && (
+                  <span style={{
+                    position: 'absolute', right: 3, bottom: 1,
+                    fontSize: coordSize,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontWeight: 600,
+                    color: light ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.55)',
+                    pointerEvents: 'none',
+                    lineHeight: 1,
+                    zIndex: 2,
+                  }}>
                     {String.fromCharCode('a'.charCodeAt(0) + f)}
                   </span>
+                )}
+
+                {/* Piece */}
+                {piece && (
+                  <div
+                    draggable={canDrag}
+                    onDragStart={canDrag ? (e) => handleDragStart(e, s) : undefined}
+                    style={{
+                      cursor: canDrag ? 'grab' : undefined,
+                      position: 'relative',
+                      zIndex: 3,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <ChessPiece
+                      piece={piece.type as PieceType}
+                      color={piece.color}
+                      size={pieceSize}
+                    />
+                  </div>
                 )}
               </div>
             );

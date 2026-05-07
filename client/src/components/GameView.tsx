@@ -18,22 +18,234 @@ import { HandPanel } from './HandPanel.js';
 import { PlayerStrip } from './PlayerStrip.js';
 import { ChatPanel } from './ChatPanel.js';
 import { legalMoves, inCheck, pseudoLegalMoves } from '../lib/legalMoves.js';
-
-// Seating layout (desktop, two boards side by side):
-//
-//   Board 0                  Board 1
-//   top:    Seat 1 (B0,Blk)  Seat 2 (B1,Blk)
-//   bottom: Seat 0 (B0,Wht)  Seat 3 (B1,Wht)
-//
-// Partners: 0↔2, 1↔3  (same team, different boards)
+import { COLOR_SCHEMES, ColorScheme, loadScheme, saveScheme } from '../themes.js';
 
 type Props = {
   store: GameStore;
   send: (msg: any) => void;
 };
 
+function SectionLabel({ text, accent }: { text: string; accent: string }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '4px 10px',
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 10, fontWeight: 700, letterSpacing: 1.5,
+      color: accent,
+    }}>
+      <div style={{
+        width: 6, height: 6, borderRadius: 3,
+        background: accent,
+        boxShadow: `0 0 8px ${accent}`,
+      }} />
+      {text}
+    </div>
+  );
+}
+
+function ThemePicker({
+  current,
+  onChange,
+}: {
+  current: ColorScheme;
+  onChange: (s: ColorScheme) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Board theme"
+        style={{
+          width: 30, height: 30,
+          background: open ? 'rgba(255,255,255,0.08)' : 'transparent',
+          border: '1px solid rgba(255,255,255,0.08)',
+          borderRadius: 6, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 120ms',
+          color: 'rgba(255,255,255,0.7)',
+          fontSize: 15,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+        onMouseLeave={(e) => { if (!open) e.currentTarget.style.background = 'transparent'; }}
+      >
+        {/* palette icon */}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/>
+          <circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/>
+          <circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/>
+          <circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/>
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>
+        </svg>
+      </button>
+
+      {open && (
+        <>
+          {/* Backdrop to close */}
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 98 }}
+            onClick={() => setOpen(false)}
+          />
+          <div style={{
+            position: 'absolute', top: 'calc(100% + 8px)', right: 0,
+            background: 'rgba(12,14,18,0.97)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 12,
+            padding: '14px 16px',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.7)',
+            zIndex: 99,
+            minWidth: 220,
+          }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9, color: 'rgba(255,255,255,0.35)',
+              letterSpacing: 1.2, textTransform: 'uppercase',
+              marginBottom: 12,
+            }}>Board Colors</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {COLOR_SCHEMES.map((scheme) => {
+                const isActive = scheme.key === current.key;
+                return (
+                  <button
+                    key={scheme.key}
+                    title={scheme.label}
+                    onClick={() => { onChange(scheme); setOpen(false); }}
+                    style={{
+                      width: 44, height: 44,
+                      borderRadius: 7,
+                      border: isActive
+                        ? '2px solid #56dbd3'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      overflow: 'hidden',
+                      cursor: 'pointer',
+                      padding: 0,
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gridTemplateRows: '1fr 1fr',
+                      boxShadow: isActive ? '0 0 0 3px rgba(86,219,211,0.25)' : 'none',
+                      transition: 'border-color 120ms, box-shadow 120ms',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <div style={{ background: scheme.light }} />
+                    <div style={{ background: scheme.dark }} />
+                    <div style={{ background: scheme.dark }} />
+                    <div style={{ background: scheme.light }} />
+                  </button>
+                );
+              })}
+            </div>
+            {/* Label for current selection */}
+            <div style={{
+              marginTop: 10,
+              fontFamily: "'Geist', 'Inter', sans-serif",
+              fontSize: 11, color: 'rgba(255,255,255,0.45)',
+            }}>
+              {current.label}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function GameHeader({
+  onResign,
+  canResign,
+  gameCode,
+  colorScheme,
+  onColorScheme,
+}: {
+  onResign: () => void;
+  canResign: boolean;
+  gameCode?: string;
+  colorScheme: ColorScheme;
+  onColorScheme: (s: ColorScheme) => void;
+}) {
+  return (
+    <header style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '14px 24px',
+      borderBottom: '1px solid rgba(255,255,255,0.06)',
+      background: 'rgba(255,255,255,0.01)',
+      backdropFilter: 'blur(10px)',
+      position: 'relative', zIndex: 5,
+      flexShrink: 0,
+    }}>
+      {/* Logo + game info */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 26, height: 26,
+            background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
+            borderRadius: 6,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: '#0a0c10', fontSize: 14,
+          }}>♞</div>
+          <span style={{
+            fontFamily: "'Geist', 'Inter', sans-serif",
+            fontSize: 14, fontWeight: 700, letterSpacing: 0.3,
+          }}>BUGHOUSE</span>
+        </div>
+        {gameCode && (
+          <>
+            <div style={{ height: 16, width: 1, background: 'rgba(255,255,255,0.1)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10, color: 'rgba(255,255,255,0.35)',
+                letterSpacing: 1, textTransform: 'uppercase',
+              }}>Game</span>
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 13, color: '#56dbd3',
+                fontWeight: 600, letterSpacing: 1,
+              }}>{gameCode}</span>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <ThemePicker current={colorScheme} onChange={onColorScheme} />
+        {canResign && (
+          <button
+            onClick={onResign}
+            style={{
+              background: 'transparent',
+              border: '1px solid rgba(239,68,68,0.4)',
+              color: '#ff5757',
+              padding: '7px 16px',
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontFamily: "'Geist', 'Inter', sans-serif",
+              fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
+              transition: 'background 120ms',
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+          >RESIGN</button>
+        )}
+      </div>
+    </header>
+  );
+}
+
 export function GameView({ store, send }: Props) {
   const { game, yourSeat } = store;
+  const [colorScheme, setColorScheme] = useState<ColorScheme>(loadScheme);
+
+  const handleColorScheme = useCallback((s: ColorScheme) => {
+    setColorScheme(s);
+    saveScheme(s);
+  }, []);
+
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
   const [draggedHandPiece, setDraggedHandPiece] = useState<DropPieceType | null>(null);
   const [premove, setPremove] = useState<PremoveState | null>(null);
@@ -74,7 +286,6 @@ export function GameView({ store, send }: Props) {
     return out;
   }, [game, yourSeat, isYourTurn]);
 
-  // For premove drops we don't know the future board state, so show any geometrically valid square.
   const getPremoveDropTargets = useCallback((piece: DropPieceType): Set<Square> => {
     const out = new Set<Square>();
     for (let s = 0; s < 64; s++) {
@@ -93,17 +304,11 @@ export function GameView({ store, send }: Props) {
     const boardState = game.boards[boardId];
     const piece = boardState.board[fromSq];
     if (!piece || piece.color !== myColor) return new Set();
-    // Run the move generator on a board that only contains the moving piece so
-    // that sliding pieces get full unblocked rays and the player can premove to
-    // any geometrically reachable square (the board will look different when the
-    // premove fires). The server re-validates on execution.
     const emptyBoard = boardState.board.map((_p, i) => i === fromSq ? piece : null);
     const fakeState = { ...boardState, board: emptyBoard, turn: myColor };
     const targets = new Set(
       pseudoLegalMoves(fakeState).filter((m) => m.from === fromSq).map((m) => m.to),
     );
-    // Pawn diagonal squares: the empty board has no opponent pieces to capture,
-    // so add both diagonals explicitly (covers en passant and future captures).
     if (piece.type === 'P') {
       const dir = myColor === 'w' ? 1 : -1;
       const f = fileOf(fromSq);
@@ -117,7 +322,6 @@ export function GameView({ store, send }: Props) {
     return targets;
   }, [game, yourSeat]);
 
-  // Fire queued premove when it becomes our turn.
   useEffect(() => {
     if (!game || yourSeat === null || !premove) return;
     if (game.status !== 'playing') { setPremove(null); return; }
@@ -155,7 +359,9 @@ export function GameView({ store, send }: Props) {
   }, [send]);
 
   const handleResign = useCallback(() => {
-    if (window.confirm('Resign?')) send({ type: 'resign' });
+    if (window.confirm('Resign the game? This will end the game for both you and your partner.')) {
+      send({ type: 'resign' });
+    }
   }, [send]);
 
   const handleRematch = useCallback(() => {
@@ -166,14 +372,22 @@ export function GameView({ store, send }: Props) {
     send({ type: 'chat', text });
   }, [send]);
 
-  if (!game) return <div style={{ padding: 40 }}>Connecting…</div>;
+  if (!game) {
+    return (
+      <div style={{
+        minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: "'Geist', 'Inter', sans-serif",
+        color: 'rgba(255,255,255,0.4)',
+      }}>
+        Connecting…
+      </div>
+    );
+  }
 
-  // Determine if we are in promotion-pick mode (only relevant for our own board).
   const myBoardId = yourSeat !== null ? seatBoard(yourSeat) : null;
   const inPromoMode = yourSeat !== null && myBoardId !== null &&
     game.boards[myBoardId].pendingPromotion?.color === seatColor(yourSeat);
 
-  // The diagonal board for promotion picking.
   const diagBoardId = yourSeat !== null ? seatBoard(diagonalOf(yourSeat)) : null;
   const diagColor = yourSeat !== null ? seatColor(diagonalOf(yourSeat)) : null;
 
@@ -181,10 +395,8 @@ export function GameView({ store, send }: Props) {
     if (!game || yourSeat === null) return null;
     if (game.status !== 'playing') return null;
 
-    // Our own board in promotion-pick mode: no normal interaction.
     if (inPromoMode && boardId === myBoardId) return null;
 
-    // Diagonal board in promotion-pick mode: show pick interaction.
     if (inPromoMode && boardId === diagBoardId) {
       return { mode: 'promotion-pick', onPick: handlePromoSelect, onCancel: handlePromoCancel };
     }
@@ -229,15 +441,13 @@ export function GameView({ store, send }: Props) {
     };
   }
 
-  // Perspective: white sees their board from white's side.
   function boardPerspective(boardId: BoardId): Color {
-    if (yourSeat === null) return 'w'; // spectator: white side up
+    if (yourSeat === null) return 'w';
     if (seatBoard(yourSeat) === boardId) return seatColor(yourSeat);
-    // Partner's board: show from partner's perspective.
     return seatColor((yourSeat + 2) % 4 as Seat);
   }
 
-  function buildBoardEl(boardId: BoardId, cellSize: number) {
+  function buildBoardEl(boardId: BoardId, cellSize: number, large = false) {
     const board = game!.boards[boardId];
     const perspective = boardPerspective(boardId);
 
@@ -251,38 +461,53 @@ export function GameView({ store, send }: Props) {
     const handSeat = isMyBoard ? yourSeat! : botSeat;
     const isMyHand = isMyBoard && yourSeat !== null;
 
+    const stripStyle = {
+      background: 'rgba(255,255,255,0.025)',
+      border: '1px solid rgba(255,255,255,0.07)',
+    };
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <PlayerStrip seat={topSeat} store={store} isYou={yourSeat === topSeat} position="top" />
-        <HandPanel
-          hand={game!.hands[topSeat]}
-          color={seatColor(topSeat)}
-          selectedPiece={null}
-          onSelect={() => {}}
-          canInteract={false}
-        />
+        {/* Top player card */}
+        <div style={{ ...stripStyle, borderRadius: 8 }}>
+          <PlayerStrip seat={topSeat} store={store} isYou={yourSeat === topSeat} position="top" large={large} />
+          <HandPanel
+            hand={game!.hands[topSeat]}
+            color={seatColor(topSeat)}
+            selectedPiece={null}
+            onSelect={() => {}}
+            canInteract={false}
+            large={large}
+          />
+        </div>
+
         <Board
           board={board.board}
           perspective={perspective}
           interaction={interaction}
           pendingPromoSquare={pendingPromoSq}
           promotionPickColor={inPromoMode && boardId === diagBoardId ? diagColor! : undefined}
-          label={`Board ${boardId + 1}`}
           premove={yourSeat !== null && seatBoard(yourSeat) === boardId ? premove : null}
           onCancelPremove={yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
           cellSize={cellSize}
+          colorScheme={colorScheme}
         />
-        <HandPanel
-          hand={game!.hands[handSeat]}
-          color={seatColor(handSeat)}
-          selectedPiece={isMyHand ? selectedPiece : null}
-          onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
-          canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
-          canDrag={isMyHand && game!.status === 'playing' && !inPromoMode}
-          onDragStart={isMyHand ? (p) => { setDraggedHandPiece(p); setPremove(null); } : undefined}
-          onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
-        />
-        <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" />
+
+        {/* Bottom player card */}
+        <div style={{ ...stripStyle, borderRadius: 8 }}>
+          <HandPanel
+            hand={game!.hands[handSeat]}
+            color={seatColor(handSeat)}
+            selectedPiece={isMyHand ? selectedPiece : null}
+            onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
+            canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
+            canDrag={isMyHand && game!.status === 'playing' && !inPromoMode}
+            onDragStart={isMyHand ? (p) => { setDraggedHandPiece(p); setPremove(null); } : undefined}
+            onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
+            large={large}
+          />
+          <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" large={large} />
+        </div>
       </div>
     );
   }
@@ -293,112 +518,191 @@ export function GameView({ store, send }: Props) {
   const inCheckNotice = yourSeat !== null && game.status === 'playing' &&
     inCheck(game.boards[seatBoard(yourSeat)], seatColor(yourSeat));
 
+  const isEnded = game.status === 'ended' && game.result;
+  const isWin = isEnded && yourSeat !== null && yourSeat % 2 === game.result!.winningTeam;
+
+  const REASON_LABEL: Record<string, string> = {
+    'king-capture': 'King captured',
+    'time': 'Time out',
+    'resign': 'Resignation',
+    'disconnect': 'Disconnect',
+  };
+
   return (
-    <div style={{ padding: 16, fontFamily: 'sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      {/* Error toasts */}
-      {store.errors.map((e, i) => (
-        <div key={i} style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 12px', borderRadius: 6, marginBottom: 4, fontSize: 13 }}>
-          {e}
-        </div>
-      ))}
+    <div style={{
+      minHeight: '100vh',
+      background: '#0a0c10',
+      color: '#fff',
+      display: 'flex',
+      flexDirection: 'column',
+      fontFamily: "'Geist', 'Inter', system-ui, sans-serif",
+    }}>
+      {/* Ambient glow */}
+      <div style={{
+        position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0,
+        background: 'radial-gradient(ellipse at 25% 30%, rgba(86,219,211,0.06) 0%, transparent 50%), radial-gradient(ellipse at 80% 70%, rgba(167,139,250,0.04) 0%, transparent 50%)',
+      }} />
 
-      {/* Promotion pick prompt */}
-      {inPromoMode && (
-        <div style={{ background: '#fef3c7', border: '1px solid #fbbf24', padding: '8px 16px', borderRadius: 6, marginBottom: 8, fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span>Click a piece on Board {(diagBoardId ?? 0) + 1} to complete your promotion.</span>
-          <button
-            onClick={handlePromoCancel}
-            style={{ padding: '2px 10px', background: '#fff', border: '1px solid #f59e0b', borderRadius: 4, cursor: 'pointer', fontWeight: 'normal', fontSize: 13 }}
-          >
-            Cancel
-          </button>
+      <GameHeader
+        onResign={handleResign}
+        canResign={yourSeat !== null && game.status === 'playing'}
+        gameCode={undefined}
+        colorScheme={colorScheme}
+        onColorScheme={handleColorScheme}
+      />
+
+      {/* Notification strip */}
+      {(store.errors.length > 0 || inPromoMode || inCheckNotice) && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 6,
+          padding: '8px 24px',
+          position: 'relative', zIndex: 5,
+        }}>
+          {store.errors.map((e, i) => (
+            <div key={i} style={{
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.3)',
+              color: '#ff8a8a',
+              padding: '6px 14px', borderRadius: 6, fontSize: 13,
+              fontFamily: "'Geist', 'Inter', sans-serif",
+            }}>
+              {e}
+            </div>
+          ))}
+          {inPromoMode && (
+            <div style={{
+              background: 'rgba(86,219,211,0.1)',
+              border: '1px solid rgba(86,219,211,0.3)',
+              padding: '8px 16px', borderRadius: 6,
+              fontFamily: "'Geist', 'Inter', sans-serif",
+              fontSize: 13, color: '#56dbd3',
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <span>Click a piece on Board {(diagBoardId ?? 0) + 1} to complete your promotion.</span>
+              <button
+                onClick={handlePromoCancel}
+                style={{
+                  padding: '2px 10px',
+                  background: 'transparent',
+                  border: '1px solid rgba(86,219,211,0.4)',
+                  borderRadius: 4, cursor: 'pointer',
+                  fontSize: 12, color: '#56dbd3',
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                }}
+              >Cancel</button>
+            </div>
+          )}
+          {inCheckNotice && !inPromoMode && (
+            <div style={{
+              background: 'rgba(239,68,68,0.12)',
+              border: '1px solid rgba(239,68,68,0.35)',
+              padding: '6px 16px', borderRadius: 6,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12, fontWeight: 700, color: '#ff5757',
+              letterSpacing: 0.5,
+            }}>
+              YOU ARE IN CHECK
+            </div>
+          )}
         </div>
       )}
 
-      {/* Check notice */}
-      {inCheckNotice && !inPromoMode && (
-        <div style={{ background: '#fee2e2', border: '1px solid #f87171', padding: '6px 16px', borderRadius: 6, marginBottom: 8, fontWeight: 'bold', color: '#dc2626' }}>
-          You are in check!
-        </div>
-      )}
+      {/* Main boards area */}
+      <main style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'center',
+        gap: 32,
+        padding: '20px 32px 32px',
+        position: 'relative', zIndex: 1,
+        flexWrap: 'wrap',
+      }}>
+        {/* My board column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+          <SectionLabel text="MY BOARD" accent="#56dbd3" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {buildBoardEl(ownBoardId, 65, true)}
+          </div>
 
-      <div style={{ display: 'flex', gap: 32, alignItems: 'flex-start' }}>
-        {/* Main board (your board) — large */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {buildBoardEl(ownBoardId, 72)}
-
-          {/* Game controls below own board */}
-          {game.status === 'ended' && game.result && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-              {(() => {
-                const isWin = yourSeat !== null && yourSeat % 2 === game.result!.winningTeam;
-                return (
-                  <div style={{
-                    background: isWin ? '#f0fdf4' : '#fef2f2',
-                    border: `2px solid ${isWin ? '#16a34a' : '#dc2626'}`,
-                    padding: 12,
-                    borderRadius: 8,
-                    fontWeight: 'bold',
-                    textAlign: 'center',
-                    color: isWin ? '#166534' : '#991b1b',
-                  }}>
-                    {yourSeat !== null && (isWin ? '🏆 Your team wins!' : 'Your team lost')}
-                    <br />
-                    <span style={{ fontSize: 12, fontWeight: 400 }}>
-                      {game.result!.reason === 'king-capture' && 'King captured'}
-                      {game.result!.reason === 'time' && 'Time out'}
-                      {game.result!.reason === 'resign' && 'Resignation'}
-                      {game.result!.reason === 'disconnect' && 'Disconnect'}
-                    </span>
-                  </div>
-                );
-              })()}
+          {/* Result + rematch */}
+          {isEnded && (
+            <div style={{
+              width: '100%',
+              background: isWin ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)',
+              border: `1px solid ${isWin ? 'rgba(52,211,153,0.35)' : 'rgba(239,68,68,0.35)'}`,
+              borderRadius: 10,
+              padding: 16,
+              textAlign: 'center',
+              marginTop: 8,
+            }}>
               {yourSeat !== null && (
-                <div style={{ textAlign: 'center' }}>
+                <div style={{
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                  fontSize: 16, fontWeight: 700,
+                  color: isWin ? '#34d399' : '#ff7070',
+                  marginBottom: 4,
+                }}>
+                  {isWin ? 'Your team wins!' : 'Your team lost'}
+                </div>
+              )}
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 11, color: 'rgba(255,255,255,0.4)',
+                letterSpacing: 0.5,
+                textTransform: 'uppercase',
+                marginBottom: yourSeat !== null ? 14 : 0,
+              }}>
+                {REASON_LABEL[game.result!.reason] ?? game.result!.reason}
+              </div>
+              {yourSeat !== null && (
+                <>
                   <button
                     onClick={handleRematch}
                     disabled={game.rematchVotes[yourSeat]}
                     style={{
-                      padding: '8px 20px',
-                      background: game.rematchVotes[yourSeat] ? '#d1fae5' : '#16a34a',
-                      color: game.rematchVotes[yourSeat] ? '#065f46' : '#fff',
-                      border: '1px solid #16a34a',
-                      borderRadius: 6,
+                      display: 'block', width: '100%',
+                      padding: '9px 0',
+                      background: game.rematchVotes[yourSeat] ? 'rgba(52,211,153,0.15)' : '#34d399',
+                      color: game.rematchVotes[yourSeat] ? '#34d399' : '#0a0c10',
+                      border: `1px solid ${game.rematchVotes[yourSeat] ? 'rgba(52,211,153,0.3)' : '#34d399'}`,
+                      borderRadius: 7,
                       cursor: game.rematchVotes[yourSeat] ? 'default' : 'pointer',
-                      fontWeight: 'bold',
-                      width: '100%',
+                      fontFamily: "'Geist', 'Inter', sans-serif",
+                      fontSize: 13, fontWeight: 700,
                     }}
                   >
-                    {game.rematchVotes[yourSeat] ? 'Rematch requested…' : 'Rematch'}
+                    {game.rematchVotes[yourSeat] ? 'Waiting for others…' : 'Rematch'}
                   </button>
-                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
-                    {([0, 1, 2, 3] as const).filter((s) => game.rematchVotes[s]).length}/4 players ready
+                  <div style={{
+                    marginTop: 6,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    fontSize: 10, color: 'rgba(255,255,255,0.3)',
+                    letterSpacing: 0.5,
+                  }}>
+                    {([0, 1, 2, 3] as const).filter((s) => game.rematchVotes[s]).length}/4 ready
                   </div>
-                </div>
+                </>
               )}
             </div>
           )}
-
-          {game.status === 'playing' && yourSeat !== null && (
-            <button
-              onClick={handleResign}
-              style={{ padding: '6px 18px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 'bold' }}
-            >
-              Resign
-            </button>
-          )}
         </div>
 
-        {/* Right column: partner board (smaller) + chat below */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {buildBoardEl(partnerBoardId, 46)}
-          <ChatPanel
-            messages={store.chatMessages}
-            onSend={handleSendChat}
-            canSend={yourSeat !== null && game.status === 'playing'}
-          />
+        {/* Partner board column + chat */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center' }}>
+          <SectionLabel text="PARTNER BOARD" accent="#a78bfa" />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {buildBoardEl(partnerBoardId, 40)}
+          </div>
+          <div style={{ width: '100%' }}>
+            <ChatPanel
+              messages={store.chatMessages}
+              onSend={handleSendChat}
+              canSend={yourSeat !== null && game.status === 'playing'}
+            />
+          </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

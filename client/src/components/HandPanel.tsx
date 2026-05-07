@@ -1,10 +1,6 @@
 import React from 'react';
 import { Color, DropPieceType, Hand } from '@bughouse/shared';
-
-const PIECE_SYMBOLS: Record<string, string> = {
-  wP: '♙', wN: '♘', wB: '♗', wR: '♖', wQ: '♕',
-  bP: '♟', bN: '♞', bB: '♝', bR: '♜', bQ: '♛',
-};
+import { ChessPiece, PieceType } from './ChessPiece.js';
 
 const PIECE_ORDER: DropPieceType[] = ['Q', 'R', 'B', 'N', 'P'];
 
@@ -15,13 +11,34 @@ type Props = {
   onSelect: (piece: DropPieceType | null) => void;
   canInteract: boolean;
   canDrag?: boolean;
+  large?: boolean;
   onDragStart?: (piece: DropPieceType) => void;
   onDragEnd?: () => void;
 };
 
-export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, onDragStart, onDragEnd }: Props) {
+export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, large, onDragStart, onDragEnd }: Props) {
+  const sz = large ? 44 : 32;
+  const iconSize = large ? 26 : 20;
+
+  const hasPieces = PIECE_ORDER.some((pt) => hand[pt] > 0);
+
   return (
-    <div style={{ display: 'flex', gap: 6, padding: '6px 0', flexWrap: 'wrap', minHeight: 44 }}>
+    <div style={{
+      display: 'flex',
+      gap: 5,
+      padding: `6px 10px`,
+      minHeight: sz + 14,
+      alignItems: 'center',
+      flexWrap: 'wrap',
+    }}>
+      {!hasPieces && (
+        <span style={{
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 11,
+          color: 'rgba(255,255,255,0.2)',
+          letterSpacing: 0.5,
+        }}>— empty pocket</span>
+      )}
       {PIECE_ORDER.map((pt) => {
         const count = hand[pt];
         if (count <= 0) return null;
@@ -40,21 +57,40 @@ export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, c
             } : undefined}
             onDragEnd={canDrag ? () => onDragEnd?.() : undefined}
             style={{
-              fontSize: 26,
-              lineHeight: 1,
-              padding: '2px 6px',
-              border: `2px solid ${isSelected ? '#2563eb' : '#555'}`,
-              borderRadius: 6,
-              background: isSelected ? '#dbeafe' : '#fff',
-              cursor: canDrag ? 'grab' : canInteract ? 'pointer' : 'default',
               position: 'relative',
+              width: sz,
+              height: sz,
+              borderRadius: 6,
+              border: isSelected
+                ? '1px solid #56dbd3'
+                : '1px solid rgba(255,255,255,0.08)',
+              background: isSelected
+                ? 'rgba(86,219,211,0.16)'
+                : 'rgba(255,255,255,0.04)',
+              cursor: canDrag ? 'grab' : canInteract ? 'pointer' : 'default',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: isSelected ? '0 0 0 2px rgba(86,219,211,0.3)' : 'none',
+              transition: 'all 120ms ease',
+              padding: 3,
             }}
             title={`Drop ${pt} (${count})`}
           >
-            {PIECE_SYMBOLS[`${color}${pt}`]}
-            <sup style={{ fontSize: 11, fontWeight: 'bold', position: 'absolute', top: 2, right: 3 }}>
-              {count}
-            </sup>
+            <ChessPiece piece={pt as PieceType} color={color} size={iconSize} />
+            {count > 1 && (
+              <span style={{
+                position: 'absolute',
+                bottom: -4, right: -4,
+                background: '#0a0a0a',
+                color: '#fff',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: large ? 10 : 9,
+                fontWeight: 700,
+                padding: '1px 4px',
+                borderRadius: 4,
+                border: '1px solid rgba(255,255,255,0.12)',
+                lineHeight: 1.2,
+              }}>×{count}</span>
+            )}
           </button>
         );
       })}
