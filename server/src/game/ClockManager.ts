@@ -13,7 +13,7 @@ export class ClockManager {
     onFlag: (seat: Seat) => void,
   ): void {
     gs.startedAt = now;
-    gs.lastClockUpdate = now;
+    gs.lastClockUpdate = [now, now];
     // Schedule flag timers for the two seats currently to-move.
     for (const boardId of [0, 1] as const) {
       const board = gs.boards[boardId];
@@ -35,17 +35,17 @@ export class ClockManager {
   ): void {
     if (gs.status !== 'playing') return;
 
-    // Drain the moving seat's clock (time used since lastClockUpdate).
-    const elapsed = now - gs.lastClockUpdate;
+    // Drain the moving seat's clock (time used since this board's last update).
+    const boardId = seatBoard(movingSeat);
+    const elapsed = now - gs.lastClockUpdate[boardId];
     const prev = gs.clocks[movingSeat];
     gs.clocks[movingSeat] = Math.max(0, prev - elapsed);
-    gs.lastClockUpdate = now;
+    gs.lastClockUpdate[boardId] = now;
 
     // Cancel old flag timer for this seat.
     this.cancelFlagTimer(movingSeat);
 
     // Schedule flag timer for the new seat-to-move on this board.
-    const boardId = seatBoard(movingSeat);
     const board = gs.boards[boardId];
     // Find the new mover seat on this board.
     const newSeat = boardId === 0
@@ -61,7 +61,7 @@ export class ClockManager {
     const color = seatColor(seat);
     const isToMove = board.turn === color && gs.status === 'playing';
     if (!isToMove) return gs.clocks[seat];
-    const elapsed = now - gs.lastClockUpdate;
+    const elapsed = now - gs.lastClockUpdate[boardId];
     return Math.max(0, gs.clocks[seat] - elapsed);
   }
 

@@ -108,7 +108,9 @@ export type GameState = {
   // milliseconds remaining per seat at lastClockUpdate; clocks tick only
   // when status === 'playing' and only for the seat-to-move on each board.
   clocks: Record<Seat, number>;
-  lastClockUpdate: number; // ms timestamp; 0 if not started
+  // Per-board reference timestamp. Each board has an independent clock so
+  // a move on board 0 must not disturb board 1's running countdown.
+  lastClockUpdate: [number, number]; // [board0, board1]; 0 if not started
   result: GameResult | null;
   startedAt: number | null;
   initialClockMs: number;

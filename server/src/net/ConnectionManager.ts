@@ -275,7 +275,7 @@ export class ConnectionManager {
     room.game = createGameState(room.code, now);
     room.game.status = 'playing';
     room.game.startedAt = now;
-    room.game.lastClockUpdate = now;
+    room.game.lastClockUpdate = [now, now];
 
     // Reset clock manager.
     this.clocks.get(room.code)?.stopAll();

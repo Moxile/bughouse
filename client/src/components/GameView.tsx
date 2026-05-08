@@ -21,6 +21,8 @@ import { ChatPanel } from './ChatPanel.js';
 import { legalMoves, pseudoLegalMoves } from '../lib/legalMoves.js';
 import { COLOR_SCHEMES, ColorScheme, loadScheme, saveScheme } from '../themes.js';
 import { PIECE_SETS, PieceSet, loadPieceSet, savePieceSet } from '../pieceSets.js';
+import { useGameSounds } from '../hooks/useGameSounds.js';
+import { SOUND_SETS, SoundSetKey, loadSoundSet, saveSoundSet, previewSoundSet } from '../sounds.js';
 
 type Props = {
   store: GameStore;
@@ -51,11 +53,15 @@ function ThemePicker({
   onChange,
   currentPieceSet,
   onPieceSetChange,
+  currentSoundSet,
+  onSoundSetChange,
 }: {
   current: ColorScheme;
   onChange: (s: ColorScheme) => void;
   currentPieceSet: PieceSet;
   onPieceSetChange: (s: PieceSet) => void;
+  currentSoundSet: SoundSetKey;
+  onSoundSetChange: (k: SoundSetKey) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -209,6 +215,47 @@ function ThemePicker({
             }}>
               {currentPieceSet.label}
             </div>
+
+            {/* ── divider ── */}
+            <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '14px 0' }} />
+
+            {/* ── Sounds ── */}
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9, color: 'rgba(255,255,255,0.35)',
+              letterSpacing: 1.2, textTransform: 'uppercase',
+              marginBottom: 10,
+            }}>Sound</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {SOUND_SETS.map(({ key, label }) => {
+                const isActive = key === currentSoundSet;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => { onSoundSetChange(key); previewSoundSet(key); }}
+                    style={{
+                      padding: '7px 14px',
+                      borderRadius: 7,
+                      border: isActive
+                        ? '2px solid #56dbd3'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      background: isActive
+                        ? 'rgba(86,219,211,0.08)'
+                        : 'rgba(255,255,255,0.03)',
+                      color: isActive ? '#56dbd3' : 'rgba(255,255,255,0.55)',
+                      cursor: 'pointer',
+                      fontFamily: "'Geist', 'Inter', sans-serif",
+                      fontSize: 12,
+                      fontWeight: isActive ? 600 : 400,
+                      boxShadow: isActive ? '0 0 0 3px rgba(86,219,211,0.15)' : 'none',
+                      transition: 'all 120ms',
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </>
       )}
@@ -224,6 +271,8 @@ function GameHeader({
   onColorScheme,
   pieceSet,
   onPieceSet,
+  soundSet,
+  onSoundSet,
 }: {
   onResign: () => void;
   canResign: boolean;
@@ -232,6 +281,8 @@ function GameHeader({
   onColorScheme: (s: ColorScheme) => void;
   pieceSet: PieceSet;
   onPieceSet: (s: PieceSet) => void;
+  soundSet: SoundSetKey;
+  onSoundSet: (k: SoundSetKey) => void;
 }) {
   return (
     <header style={{
@@ -286,6 +337,8 @@ function GameHeader({
           onChange={onColorScheme}
           currentPieceSet={pieceSet}
           onPieceSetChange={onPieceSet}
+          currentSoundSet={soundSet}
+          onSoundSetChange={onSoundSet}
         />
         {canResign && (
           <button
@@ -337,6 +390,8 @@ function useBoardLayout() {
 
 export function GameView({ store, send }: Props) {
   const { game, yourSeat } = store;
+  const [soundSet, setSoundSet] = useState<SoundSetKey>(loadSoundSet);
+  useGameSounds(game, yourSeat, soundSet);
   const [colorScheme, setColorScheme] = useState<ColorScheme>(loadScheme);
   const [pieceSet, setPieceSet] = useState<PieceSet>(loadPieceSet);
   const { cellSize, chatWidth } = useBoardLayout();
@@ -349,6 +404,11 @@ export function GameView({ store, send }: Props) {
   const handlePieceSet = useCallback((s: PieceSet) => {
     setPieceSet(s);
     savePieceSet(s);
+  }, []);
+
+  const handleSoundSet = useCallback((k: SoundSetKey) => {
+    setSoundSet(k);
+    saveSoundSet(k);
   }, []);
 
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
@@ -708,6 +768,8 @@ export function GameView({ store, send }: Props) {
         onColorScheme={handleColorScheme}
         pieceSet={pieceSet}
         onPieceSet={handlePieceSet}
+        soundSet={soundSet}
+        onSoundSet={handleSoundSet}
       />
 
 

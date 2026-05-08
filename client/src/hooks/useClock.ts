@@ -20,7 +20,7 @@ export function useClock(game: GameState | null, seat: Seat): number {
     }
     // Tick every 100ms while this seat is to-move.
     const update = () => {
-      const elapsed = Date.now() - game.lastClockUpdate;
+      const elapsed = Date.now() - game.lastClockUpdate[boardId];
       setMs(Math.max(0, game.clocks[seat] - elapsed));
     };
     update();

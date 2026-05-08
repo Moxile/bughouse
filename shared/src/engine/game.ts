@@ -49,7 +49,7 @@ export function createGameState(code: string, now: number): GameState {
       2: INITIAL_CLOCK_MS,
       3: INITIAL_CLOCK_MS,
     },
-    lastClockUpdate: 0,
+    lastClockUpdate: [0, 0],
     result: null,
     startedAt: null,
     initialClockMs: INITIAL_CLOCK_MS,
