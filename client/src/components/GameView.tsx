@@ -20,6 +20,7 @@ import { PlayerStrip } from './PlayerStrip.js';
 import { ChatPanel } from './ChatPanel.js';
 import { legalMoves, pseudoLegalMoves } from '../lib/legalMoves.js';
 import { COLOR_SCHEMES, ColorScheme, loadScheme, saveScheme } from '../themes.js';
+import { PIECE_SETS, PieceSet, loadPieceSet, savePieceSet } from '../pieceSets.js';
 
 type Props = {
   store: GameStore;
@@ -48,9 +49,13 @@ function SectionLabel({ text, accent }: { text: string; accent: string }) {
 function ThemePicker({
   current,
   onChange,
+  currentPieceSet,
+  onPieceSetChange,
 }: {
   current: ColorScheme;
   onChange: (s: ColorScheme) => void;
+  currentPieceSet: PieceSet;
+  onPieceSetChange: (s: PieceSet) => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -97,13 +102,14 @@ function ThemePicker({
             padding: '14px 16px',
             boxShadow: '0 20px 60px rgba(0,0,0,0.7)',
             zIndex: 99,
-            minWidth: 220,
+            minWidth: 240,
           }}>
+            {/* ── Board Colors ── */}
             <div style={{
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 9, color: 'rgba(255,255,255,0.35)',
               letterSpacing: 1.2, textTransform: 'uppercase',
-              marginBottom: 12,
+              marginBottom: 10,
             }}>Board Colors</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {COLOR_SCHEMES.map((scheme) => {
@@ -112,7 +118,7 @@ function ThemePicker({
                   <button
                     key={scheme.key}
                     title={scheme.label}
-                    onClick={() => { onChange(scheme); setOpen(false); }}
+                    onClick={() => { onChange(scheme); }}
                     style={{
                       width: 44, height: 44,
                       borderRadius: 7,
@@ -138,13 +144,70 @@ function ThemePicker({
                 );
               })}
             </div>
-            {/* Label for current selection */}
             <div style={{
-              marginTop: 10,
+              marginTop: 8, marginBottom: 14,
               fontFamily: "'Geist', 'Inter', sans-serif",
-              fontSize: 11, color: 'rgba(255,255,255,0.45)',
+              fontSize: 11, color: 'rgba(255,255,255,0.4)',
             }}>
               {current.label}
+            </div>
+
+            {/* ── divider ── */}
+            <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', marginBottom: 14 }} />
+
+            {/* ── Piece Set ── */}
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 9, color: 'rgba(255,255,255,0.35)',
+              letterSpacing: 1.2, textTransform: 'uppercase',
+              marginBottom: 10,
+            }}>Pieces</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {PIECE_SETS.map((ps) => {
+                const isActive = ps.key === currentPieceSet.key;
+                const pawnSvg = ps.paths['P']('#f5f5f0', '#1a1a1a');
+                return (
+                  <button
+                    key={ps.key}
+                    title={ps.label}
+                    onClick={() => { onPieceSetChange(ps); }}
+                    style={{
+                      width: 52, height: 52,
+                      borderRadius: 7,
+                      border: isActive
+                        ? '2px solid #56dbd3'
+                        : '2px solid rgba(255,255,255,0.1)',
+                      background: isActive
+                        ? 'rgba(86,219,211,0.06)'
+                        : 'rgba(255,255,255,0.03)',
+                      cursor: 'pointer',
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: isActive ? '0 0 0 3px rgba(86,219,211,0.2)' : 'none',
+                      transition: 'border-color 120ms, box-shadow 120ms, background 120ms',
+                      flexShrink: 0,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <svg
+                      viewBox="0 0 45 45"
+                      width={38}
+                      height={38}
+                      style={{ display: 'block', filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.5))' }}
+                      dangerouslySetInnerHTML={{ __html: pawnSvg }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{
+              marginTop: 8,
+              fontFamily: "'Geist', 'Inter', sans-serif",
+              fontSize: 11, color: 'rgba(255,255,255,0.4)',
+            }}>
+              {currentPieceSet.label}
             </div>
           </div>
         </>
@@ -159,12 +222,16 @@ function GameHeader({
   gameCode,
   colorScheme,
   onColorScheme,
+  pieceSet,
+  onPieceSet,
 }: {
   onResign: () => void;
   canResign: boolean;
   gameCode?: string;
   colorScheme: ColorScheme;
   onColorScheme: (s: ColorScheme) => void;
+  pieceSet: PieceSet;
+  onPieceSet: (s: PieceSet) => void;
 }) {
   return (
     <header style={{
@@ -214,7 +281,12 @@ function GameHeader({
 
       {/* Actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ThemePicker current={colorScheme} onChange={onColorScheme} />
+        <ThemePicker
+          current={colorScheme}
+          onChange={onColorScheme}
+          currentPieceSet={pieceSet}
+          onPieceSetChange={onPieceSet}
+        />
         {canResign && (
           <button
             onClick={onResign}
@@ -266,11 +338,17 @@ function useBoardLayout() {
 export function GameView({ store, send }: Props) {
   const { game, yourSeat } = store;
   const [colorScheme, setColorScheme] = useState<ColorScheme>(loadScheme);
+  const [pieceSet, setPieceSet] = useState<PieceSet>(loadPieceSet);
   const { cellSize, chatWidth } = useBoardLayout();
 
   const handleColorScheme = useCallback((s: ColorScheme) => {
     setColorScheme(s);
     saveScheme(s);
+  }, []);
+
+  const handlePieceSet = useCallback((s: PieceSet) => {
+    setPieceSet(s);
+    savePieceSet(s);
   }, []);
 
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
@@ -553,6 +631,7 @@ export function GameView({ store, send }: Props) {
             large={large}
             cellSize={cellSize}
             colorScheme={colorScheme}
+            pieceSet={pieceSet}
           />
         </div>
 
@@ -566,6 +645,7 @@ export function GameView({ store, send }: Props) {
           onCancelPremove={yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
           cellSize={cellSize}
           colorScheme={colorScheme}
+          pieceSet={pieceSet}
           lastMove={board.lastMove}
         />
 
@@ -583,6 +663,7 @@ export function GameView({ store, send }: Props) {
             large={large}
             cellSize={cellSize}
             colorScheme={colorScheme}
+            pieceSet={pieceSet}
           />
           <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" large={large} />
         </div>
@@ -625,6 +706,8 @@ export function GameView({ store, send }: Props) {
         gameCode={undefined}
         colorScheme={colorScheme}
         onColorScheme={handleColorScheme}
+        pieceSet={pieceSet}
+        onPieceSet={handlePieceSet}
       />
 
 
@@ -749,6 +832,7 @@ export function GameView({ store, send }: Props) {
               piece={draggedHandPiece as PieceType}
               color={seatColor(yourSeat)}
               size={dragSize}
+              pieceSet={pieceSet}
             />
           </div>
         );

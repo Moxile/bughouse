@@ -10,6 +10,7 @@ import {
 } from '@bughouse/shared';
 import { ChessPiece, PieceType } from './ChessPiece.js';
 import { ColorScheme, DEFAULT_SCHEME } from '../themes.js';
+import { PieceSet, DEFAULT_PIECE_SET } from '../pieceSets.js';
 
 export type PremoveState =
   | { type: 'move'; from: Square; to: Square }
@@ -31,6 +32,7 @@ type Props = {
   onCancelPremove?: () => void;
   cellSize?: number;
   colorScheme?: ColorScheme;
+  pieceSet?: PieceSet;
   lastMove?: { from: Square; to: Square } | null;
 };
 
@@ -47,6 +49,7 @@ export function Board({
   onCancelPremove,
   cellSize = 65,
   colorScheme = DEFAULT_SCHEME,
+  pieceSet = DEFAULT_PIECE_SET,
   lastMove,
 }: Props) {
   const cs = colorScheme;
@@ -347,6 +350,7 @@ export function Board({
                       piece={piece.type as PieceType}
                       color={piece.color}
                       size={pieceSize}
+                      pieceSet={pieceSet}
                     />
                   </div>
                 )}
@@ -373,6 +377,7 @@ export function Board({
             piece={draggingPiece.type as PieceType}
             color={draggingPiece.color}
             size={Math.round(pieceSize * 1.2)}
+            pieceSet={pieceSet}
           />
         </div>
       )}

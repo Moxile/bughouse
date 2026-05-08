@@ -131,12 +131,13 @@ export function applyGameMove(
     };
   } else if (!result.triggeredPromotion) {
     const oppColor: Color = expectedColor === 'w' ? 'b' : 'w';
-    if (inCheck(result.state, oppColor) && !hasLegalMove(result.state)) {
+    const oppSeat = seatOnBoard(boardId, oppColor);
+    if (inCheck(result.state, oppColor) && !hasAnyEscape(result.state, oppColor, gs.hands[oppSeat])) {
       gs.status = 'ended';
       gs.result = {
         winningTeam: teamOf(seat),
         reason: 'checkmate',
-        losingSeat: seatOnBoard(boardId, oppColor),
+        losingSeat: oppSeat,
         boardId,
       };
     }
@@ -354,12 +355,13 @@ export function applyGamePromotion(
   gs.hands[diagSeat].P += 1;
 
   const oppColor: Color = color === 'w' ? 'b' : 'w';
-  if (inCheck(promotedAfter, oppColor) && !hasLegalMove(promotedAfter)) {
+  const oppSeat = seatOnBoard(boardId, oppColor);
+  if (inCheck(promotedAfter, oppColor) && !hasAnyEscape(promotedAfter, oppColor, gs.hands[oppSeat])) {
     gs.status = 'ended';
     gs.result = {
       winningTeam: teamOf(seat),
       reason: 'checkmate',
-      losingSeat: seatOnBoard(boardId, oppColor),
+      losingSeat: oppSeat,
       boardId,
     };
   }

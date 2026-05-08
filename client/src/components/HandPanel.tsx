@@ -2,6 +2,7 @@ import React from 'react';
 import { Color, DropPieceType, Hand } from '@bughouse/shared';
 import { ChessPiece, PieceType } from './ChessPiece.js';
 import { ColorScheme, DEFAULT_SCHEME } from '../themes.js';
+import { PieceSet, DEFAULT_PIECE_SET } from '../pieceSets.js';
 
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -25,9 +26,10 @@ type Props = {
   onDragStart?: (piece: DropPieceType) => void;
   onDragEnd?: () => void;
   colorScheme?: ColorScheme;
+  pieceSet?: PieceSet;
 };
 
-export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, large, cellSize, onDragStart, onDragEnd, colorScheme = DEFAULT_SCHEME }: Props) {
+export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, canDrag, large, cellSize, onDragStart, onDragEnd, colorScheme = DEFAULT_SCHEME, pieceSet = DEFAULT_PIECE_SET }: Props) {
   const cs = colorScheme;
   const sz = cellSize !== undefined
     ? Math.max(40, Math.round(cellSize * 0.85))
@@ -114,7 +116,7 @@ export function HandPanel({ hand, color, selectedPiece, onSelect, canInteract, c
             }}
             title={`Drop ${pt} (${count})`}
           >
-            <ChessPiece piece={pt as PieceType} color={color} size={iconSize} />
+            <ChessPiece piece={pt as PieceType} color={color} size={iconSize} pieceSet={pieceSet} />
             {count > 1 && (
               <span style={{
                 position: 'absolute',
