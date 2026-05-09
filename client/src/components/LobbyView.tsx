@@ -37,6 +37,12 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
     send({ type: 'unready' });
   };
 
+  const currentMinutes = Math.round((store.game?.initialClockMs ?? 5 * 60 * 1000) / 60000);
+
+  const handleSetTimeControl = (minutes: number) => {
+    send({ type: 'set-time-control', minutes });
+  };
+
   const url = `${location.origin}/g/${code}`;
 
   return (
@@ -128,6 +134,37 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
               fontFamily: "'Geist', 'Inter', sans-serif",
             }}
           />
+        </div>
+
+        {/* Time control */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            fontSize: 10, color: 'rgba(255,255,255,0.35)',
+            letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
+          }}>Time control</div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {[1, 2, 3, 4, 5].map((m) => {
+              const selected = currentMinutes === m;
+              return (
+                <button
+                  key={m}
+                  onClick={() => handleSetTimeControl(m)}
+                  style={{
+                    padding: '6px 14px',
+                    background: selected ? 'rgba(86,219,211,0.15)' : 'rgba(255,255,255,0.04)',
+                    color: selected ? '#56dbd3' : 'rgba(255,255,255,0.5)',
+                    border: `1px solid ${selected ? 'rgba(86,219,211,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    fontSize: 13, fontWeight: selected ? 700 : 400,
+                    fontFamily: "'JetBrains Mono', monospace",
+                    transition: 'all 150ms',
+                  }}
+                >{m}+0</button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Seat grid */}

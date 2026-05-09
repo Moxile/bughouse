@@ -32,7 +32,7 @@ import { Move, hasLegalMove, inCheck, pseudoLegalMoves } from './moves.js';
 
 export const INITIAL_CLOCK_MS = 5 * 60 * 1000;
 
-export function createGameState(code: string, now: number): GameState {
+export function createGameState(code: string, now: number, initialClockMs = INITIAL_CLOCK_MS): GameState {
   return {
     code,
     status: 'lobby',
@@ -44,15 +44,15 @@ export function createGameState(code: string, now: number): GameState {
       3: emptyHand(),
     } satisfies Hands,
     clocks: {
-      0: INITIAL_CLOCK_MS,
-      1: INITIAL_CLOCK_MS,
-      2: INITIAL_CLOCK_MS,
-      3: INITIAL_CLOCK_MS,
+      0: initialClockMs,
+      1: initialClockMs,
+      2: initialClockMs,
+      3: initialClockMs,
     },
     lastClockUpdate: [0, 0],
     result: null,
     startedAt: null,
-    initialClockMs: INITIAL_CLOCK_MS,
+    initialClockMs,
     rematchVotes: { 0: false, 1: false, 2: false, 3: false },
   };
 }

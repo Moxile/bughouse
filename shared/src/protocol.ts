@@ -61,6 +61,12 @@ export type C_Rematch = {
   type: 'rematch';
 };
 
+export type C_SetTimeControl = {
+  type: 'set-time-control';
+  // Minutes per player (1–5).
+  minutes: number;
+};
+
 export type ClientMessage =
   | C_Join
   | C_ClaimSeat
@@ -72,7 +78,8 @@ export type ClientMessage =
   | C_CancelPromotion
   | C_Resign
   | C_Chat
-  | C_Rematch;
+  | C_Rematch
+  | C_SetTimeControl;
 
 // ---------- Server → Client ----------
 

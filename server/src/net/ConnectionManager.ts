@@ -105,6 +105,7 @@ export class ConnectionManager {
       case 'resign': return this.handleResign(cs);
       case 'chat': return this.handleChat(cs, msg);
       case 'rematch': return this.handleRematch(cs);
+      case 'set-time-control': return this.handleSetTimeControl(cs, msg);
     }
   }
 
@@ -175,6 +176,24 @@ export class ConnectionManager {
     }
     if (cs.room.game.status !== 'lobby') return;
     this.lobby.setUnready(cs.room, cs.seat);
+    this.broadcastState(cs.room);
+  }
+
+  private handleSetTimeControl(cs: ClientState, msg: { minutes: number }): void {
+    if (!cs.room || cs.seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (cs.room.game.status !== 'lobby') return;
+    const minutes = Math.round(msg.minutes);
+    if (minutes < 1 || minutes > 5) return;
+    const ms = minutes * 60 * 1000;
+    const game = cs.room.game;
+    game.initialClockMs = ms;
+    game.clocks[0] = ms;
+    game.clocks[1] = ms;
+    game.clocks[2] = ms;
+    game.clocks[3] = ms;
     this.broadcastState(cs.room);
   }
 
