@@ -37,12 +37,26 @@ type ClientState = {
   name: string | null;
 };
 
+const PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
 export class ConnectionManager {
   private lobby = new LobbyManager();
   // Map from ws -> client state.
   private clients = new Map<WebSocket, ClientState>();
   // Map from room.code -> ClockManager.
   private clocks = new Map<string, ClockManager>();
+
+  constructor() {
+    setInterval(() => this.pruneRooms(), PRUNE_INTERVAL_MS);
+  }
+
+  private pruneRooms(): void {
+    const deleted = this.lobby.pruneIdleRooms();
+    for (const code of deleted) {
+      this.clocks.get(code)?.stopAll();
+      this.clocks.delete(code);
+    }
+  }
 
   handleConnection(ws: WebSocket): void {
     const cs: ClientState = { ws, playerId: null, seat: null, room: null, name: null };

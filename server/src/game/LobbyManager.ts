@@ -3,6 +3,7 @@ import { createGameState } from '../engine/game.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const DISCONNECT_TIMEOUT_MS = 30_000;
+const ROOM_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export type PlayerSlot = {
   seat: Seat;
@@ -121,6 +122,20 @@ export class LobbyManager {
       clearTimeout(slot.disconnectTimer);
       slot.disconnectTimer = undefined;
     }
+  }
+
+  // Delete rooms that have no connected clients and haven't been active for ROOM_TTL_MS.
+  // Returns the codes of deleted rooms so callers can clean up associated state.
+  pruneIdleRooms(now = Date.now()): string[] {
+    const deleted: string[] = [];
+    for (const [code, room] of this.rooms) {
+      const idle = room.clients.size === 0 && room.game.status !== 'playing';
+      if (idle && now - room.createdAt > ROOM_TTL_MS) {
+        this.deleteRoom(code);
+        deleted.push(code);
+      }
+    }
+    return deleted;
   }
 
   // Return all rooms (for cleanup/stats).
