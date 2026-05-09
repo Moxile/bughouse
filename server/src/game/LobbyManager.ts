@@ -109,6 +109,10 @@ export class LobbyManager {
   ): void {
     const slot = room.slots.get(seat);
     if (!slot) return;
+    // A pending timer from an earlier disconnect must be cleared here, not
+    // just on reconnect: rapid disconnect→disconnect cycles would otherwise
+    // leak the first timer and forfeit a player who is currently connected.
+    if (slot.disconnectTimer) clearTimeout(slot.disconnectTimer);
     slot.connected = false;
     slot.disconnectTimer = setTimeout(() => {
       onTimeout(room, seat);
