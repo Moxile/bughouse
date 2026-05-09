@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { BughouseIcon } from './BughouseIcon';
 import {
   BoardId,
   Color,
@@ -310,13 +311,7 @@ function GameHeader({
             padding: 0, color: 'inherit',
           }}
         >
-          <div style={{
-            width: 26, height: 26,
-            background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
-            borderRadius: 6,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#0a0c10', fontSize: 14,
-          }}>♞</div>
+          <BughouseIcon size={26} />
           <span style={{
             fontFamily: "'Geist', 'Inter', sans-serif",
             fontSize: 14, fontWeight: 700, letterSpacing: 0.3,

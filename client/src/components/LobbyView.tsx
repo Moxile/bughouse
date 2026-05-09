@@ -1,5 +1,6 @@
 import React from 'react';
 import { Seat, seatColor, seatBoard } from '@bughouse/shared';
+import { BughouseIcon } from './BughouseIcon';
 import type { GameStore } from '../hooks/useGame.js';
 
 const SEAT_LABELS = ['Board 1 — White', 'Board 1 — Black', 'Board 2 — Black', 'Board 2 — White'];
@@ -65,13 +66,7 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
       <div style={{ width: '100%', maxWidth: 560, position: 'relative', zIndex: 1 }}>
         {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <div style={{
-            width: 30, height: 30,
-            background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
-            borderRadius: 7,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 17, color: '#0a0c10',
-          }}>♞</div>
+          <BughouseIcon size={30} />
           <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 0.3 }}>BUGHOUSE</span>
           <span style={{
             fontFamily: "'JetBrains Mono', monospace",

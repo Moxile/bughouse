@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { SplitBoardLogo } from './SplitBoardLogo';
 
 type RoomSummary = {
   code: string;
@@ -51,35 +52,29 @@ export function HomePage({ onJoin, onRules }: Props) {
       {/* Ambient glow */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none',
-        background: 'radial-gradient(ellipse at 50% 40%, rgba(86,219,211,0.07) 0%, transparent 55%), radial-gradient(ellipse at 80% 80%, rgba(167,139,250,0.05) 0%, transparent 50%)',
+        background: 'radial-gradient(ellipse at 38% 32%, rgba(86,219,211,0.10) 0%, transparent 50%), radial-gradient(ellipse at 62% 32%, rgba(167,139,250,0.09) 0%, transparent 50%), radial-gradient(ellipse at 80% 80%, rgba(167,139,250,0.05) 0%, transparent 45%)',
       }} />
 
       <div style={{ width: '100%', maxWidth: 380, position: 'relative', zIndex: 1 }}>
         {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, marginBottom: 8 }}>
-          <div style={{
-            width: 36, height: 36,
-            background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
-            borderRadius: 9,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 20, color: '#0a0c10',
-          }}>♞</div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 36 }}>
+          <SplitBoardLogo width={156} />
           <span style={{
             fontFamily: "'Geist', 'Inter', sans-serif",
-            fontSize: 24, fontWeight: 800,
+            fontSize: 28, fontWeight: 800,
             letterSpacing: 0.5,
+            marginTop: 18,
           }}>BUGHOUSE</span>
+          <p style={{
+            fontFamily: "'JetBrains Mono', monospace",
+            color: 'rgba(255,255,255,0.35)',
+            margin: '6px 0 0', fontSize: 11,
+            textAlign: 'center', letterSpacing: 1,
+            textTransform: 'uppercase',
+          }}>
+            4-player · 2-board chess variant
+          </p>
         </div>
-
-        <p style={{
-          fontFamily: "'JetBrains Mono', monospace",
-          color: 'rgba(255,255,255,0.35)',
-          marginBottom: 40, fontSize: 12,
-          textAlign: 'center', letterSpacing: 1,
-          textTransform: 'uppercase',
-        }}>
-          4-player · 2-board chess variant
-        </p>
 
         {/* Create game */}
         <button
