@@ -195,6 +195,38 @@ export function HomePage({ onJoin, onRules }: Props) {
           </a>
         </p>
 
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+          <a
+            href="https://buymeacoffee.com/kunit"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '9px 18px',
+              background: 'rgba(255,213,0,0.08)',
+              border: '1px solid rgba(255,213,0,0.2)',
+              borderRadius: 8,
+              color: '#ffd500',
+              fontSize: 13, fontWeight: 600,
+              fontFamily: "'Geist', 'Inter', sans-serif",
+              textDecoration: 'none',
+              letterSpacing: 0.2,
+              transition: 'background 140ms, border-color 140ms',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255,213,0,0.15)';
+              e.currentTarget.style.borderColor = 'rgba(255,213,0,0.4)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255,213,0,0.08)';
+              e.currentTarget.style.borderColor = 'rgba(255,213,0,0.2)';
+            }}
+          >
+            <span style={{ fontSize: 16 }}>☕</span>
+            Buy me a coffee
+          </a>
+        </div>
+
         {liveGames.length > 0 && (
           <div style={{ marginTop: 32 }}>
             <div style={{
