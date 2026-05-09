@@ -18,7 +18,15 @@ export type PremoveState =
 
 export type BoardInteraction =
   | { mode: 'move'; onMove: (from: Square, to: Square) => void; getTargets: (from: Square) => Set<Square> }
-  | { mode: 'drop'; piece: DropPieceType; dropTargets: Set<Square>; onDrop: (to: Square) => void }
+  | {
+      mode: 'drop';
+      piece: DropPieceType;
+      dropTargets: Set<Square>;
+      onDrop: (to: Square) => void;
+      onCancel?: () => void;
+      getMoveTargets?: (from: Square) => Set<Square>;
+      onMove?: (from: Square, to: Square) => void;
+    }
   | { mode: 'promotion-pick'; onPick: (sq: Square) => void; onCancel?: () => void };
 
 type Props = {
@@ -115,7 +123,46 @@ export function Board({
 
     // Drop mode: clicking any valid target drops there, or drag to target
     if (interaction.mode === 'drop') {
-      const { dropTargets, onDrop } = interaction;
+      const { dropTargets, onDrop, onCancel, getMoveTargets, onMove: onMovePiece } = interaction;
+      if (!dropTargets.has(s)) {
+        // Clicked outside valid drop targets: cancel hand selection and treat
+        // this press as a normal piece press (select + optional drag).
+        onCancel?.();
+        const piece = board[s];
+        if (piece && getMoveTargets && onMovePiece) {
+          const targets = getMoveTargets(s);
+          setSelected(s);
+          const startX = e.clientX;
+          const startY = e.clientY;
+          let dragging = false;
+          const onPMove = (me: PointerEvent) => {
+            if (!dragging) {
+              const dx = me.clientX - startX;
+              const dy = me.clientY - startY;
+              if (dx * dx + dy * dy > DRAG_PX * DRAG_PX) dragging = true;
+            }
+            if (dragging) {
+              const hover = sqFromClient(me.clientX, me.clientY);
+              setDrag({ src: s, x: me.clientX, y: me.clientY, hover });
+            }
+          };
+          const onPUp = (ue: PointerEvent) => {
+            document.removeEventListener('pointermove', onPMove);
+            if (dragging) {
+              setDrag(null);
+              const toSq = sqFromClient(ue.clientX, ue.clientY);
+              if (toSq !== null && targets.has(toSq)) onMovePiece(s, toSq);
+              setSelected(null);
+            }
+            // else: piece stays selected for a follow-up click
+          };
+          document.addEventListener('pointermove', onPMove);
+          document.addEventListener('pointerup', onPUp, { once: true });
+        } else if (board[s]) {
+          setSelected(s);
+        }
+        return;
+      }
       document.addEventListener('pointerup', (ue: PointerEvent) => {
         const toSq = sqFromClient(ue.clientX, ue.clientY);
         if (toSq !== null && dropTargets.has(toSq)) onDrop(toSq);
@@ -364,8 +411,9 @@ export function Board({
       {draggingPiece && drag && (
         <div style={{
           position: 'fixed',
-          left: drag.x - pieceSize * 0.6,
-          top: drag.y - pieceSize * 0.6,
+          left: 0,
+          top: 0,
+          transform: `translate(${drag.x - Math.round(pieceSize * 1.2) / 2}px, ${drag.y - Math.round(pieceSize * 1.2) / 2}px)`,
           width: pieceSize * 1.2,
           height: pieceSize * 1.2,
           pointerEvents: 'none',

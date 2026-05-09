@@ -14,7 +14,7 @@ function isRules(): boolean {
   return location.pathname === '/rules';
 }
 
-function GamePage({ code }: { code: string }) {
+function GamePage({ code, onHome }: { code: string; onHome: () => void }) {
   const [playerName, setPlayerName] = useState(
     () => localStorage.getItem('playerName') ?? 'Player',
   );
@@ -37,7 +37,7 @@ function GamePage({ code }: { code: string }) {
     );
   }
 
-  return <GameView store={store} send={send} />;
+  return <GameView store={store} send={send} onHome={onHome} />;
 }
 
 export function App() {
@@ -68,7 +68,8 @@ export function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  if (code) return <GamePage code={code} />;
+  const handleHome = () => { history.pushState(null, '', '/'); setCode(null); };
+  if (code) return <GamePage code={code} onHome={handleHome} />;
   if (rules) return <RulesPage onBack={handleBack} />;
   return <HomePage onJoin={handleJoin} onRules={handleRules} />;
 }

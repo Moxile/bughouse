@@ -27,6 +27,7 @@ import { SOUND_SETS, SoundSetKey, loadSoundSet, saveSoundSet, previewSoundSet } 
 type Props = {
   store: GameStore;
   send: (msg: any) => void;
+  onHome?: () => void;
 };
 
 function SectionLabel({ text, accent }: { text: string; accent: string }) {
@@ -273,6 +274,7 @@ function GameHeader({
   onPieceSet,
   soundSet,
   onSoundSet,
+  onHome,
 }: {
   onResign: () => void;
   canResign: boolean;
@@ -283,6 +285,7 @@ function GameHeader({
   onPieceSet: (s: PieceSet) => void;
   soundSet: SoundSetKey;
   onSoundSet: (k: SoundSetKey) => void;
+  onHome?: () => void;
 }) {
   return (
     <header style={{
@@ -298,7 +301,14 @@ function GameHeader({
     }}>
       {/* Logo + game info */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <button
+          onClick={onHome}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            background: 'none', border: 'none', cursor: onHome ? 'pointer' : 'default',
+            padding: 0, color: 'inherit',
+          }}
+        >
           <div style={{
             width: 26, height: 26,
             background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
@@ -310,7 +320,7 @@ function GameHeader({
             fontFamily: "'Geist', 'Inter', sans-serif",
             fontSize: 14, fontWeight: 700, letterSpacing: 0.3,
           }}>BUGHOUSE</span>
-        </div>
+        </button>
         {gameCode && (
           <>
             <div style={{ height: 16, width: 1, background: 'rgba(255,255,255,0.1)' }} />
@@ -388,7 +398,7 @@ function useBoardLayout() {
   return layout;
 }
 
-export function GameView({ store, send }: Props) {
+export function GameView({ store, send, onHome }: Props) {
   const { game, yourSeat } = store;
   const [soundSet, setSoundSet] = useState<SoundSetKey>(loadSoundSet);
   useGameSounds(game, yourSeat, soundSet);
@@ -628,6 +638,9 @@ export function GameView({ store, send }: Props) {
             setSelectedPiece(null);
             setDraggedHandPiece(null);
           },
+          onCancel: () => { setSelectedPiece(null); setDraggedHandPiece(null); },
+          getMoveTargets: (from) => getPremoveTargets(boardId, from),
+          onMove: (from, to) => { setPremove({ type: 'move', from, to }); setSelectedPiece(null); setDraggedHandPiece(null); },
         };
       }
       return {
@@ -643,6 +656,9 @@ export function GameView({ store, send }: Props) {
         piece: activePiece,
         dropTargets: getDropTargets(boardId, activePiece),
         onDrop: (to) => handleDrop(boardId, to),
+        onCancel: () => { setSelectedPiece(null); setDraggedHandPiece(null); },
+        getMoveTargets: (from) => getMoveLegalTargets(boardId, from),
+        onMove: (from, to) => { handleMove(boardId, from, to); setSelectedPiece(null); setDraggedHandPiece(null); },
       };
     }
     return {
@@ -653,7 +669,11 @@ export function GameView({ store, send }: Props) {
   }
 
   function boardPerspective(boardId: BoardId): Color {
-    if (yourSeat === null) return 'w';
+    if (yourSeat === null) {
+      // Observers: Board 0 shows white on bottom, Board 1 shows black on bottom.
+      // This puts the same team (seats 0 and 2) at the bottom of each board.
+      return boardId === 0 ? 'w' : 'b';
+    }
     if (seatBoard(yourSeat) === boardId) return seatColor(yourSeat);
     return seatColor((yourSeat + 2) % 4 as Seat);
   }
@@ -770,6 +790,7 @@ export function GameView({ store, send }: Props) {
         onPieceSet={handlePieceSet}
         soundSet={soundSet}
         onSoundSet={handleSoundSet}
+        onHome={onHome}
       />
 
 
@@ -803,6 +824,7 @@ export function GameView({ store, send }: Props) {
             messages={store.chatMessages}
             onSend={handleSendChat}
             canSend={yourSeat !== null && game.status === 'playing'}
+            height={Math.max(300, Math.min(480, Math.round(cellSize * 5.5)))}
           />
 
           {/* Result + rematch */}
@@ -881,8 +903,9 @@ export function GameView({ store, send }: Props) {
         return (
           <div style={{
             position: 'fixed',
-            left: handDragPos.x - dragSize / 2,
-            top: handDragPos.y - dragSize / 2,
+            left: 0,
+            top: 0,
+            transform: `translate(${handDragPos.x - dragSize / 2}px, ${handDragPos.y - dragSize / 2}px)`,
             width: dragSize,
             height: dragSize,
             pointerEvents: 'none',

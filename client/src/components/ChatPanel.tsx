@@ -5,6 +5,7 @@ type Props = {
   messages: S_Chat[];
   onSend: (text: string) => void;
   canSend: boolean;
+  height?: number;
 };
 
 const PIECE_SYMBOLS: Record<string, string> = {
@@ -18,7 +19,7 @@ const QUICK_BTNS = [
   { id: 'mate', label: 'I HAVE MATE', msg: 'I have mate!', urgent: true },
 ];
 
-export function ChatPanel({ messages, onSend, canSend }: Props) {
+export function ChatPanel({ messages, onSend, canSend, height }: Props) {
   const [text, setText] = useState('');
   const [requestMode, setRequestMode] = useState<'need' | 'dontgive'>('need');
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -55,6 +56,7 @@ export function ChatPanel({ messages, onSend, canSend }: Props) {
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
+      ...(height !== undefined ? { height } : {}),
     }}>
       {/* Header */}
       <div style={{
@@ -97,8 +99,8 @@ export function ChatPanel({ messages, onSend, canSend }: Props) {
       <div style={{
         overflowY: 'auto',
         padding: '10px 12px',
-        minHeight: 90,
-        maxHeight: 190,
+        flex: 1,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         gap: 5,

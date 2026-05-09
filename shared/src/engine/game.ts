@@ -133,13 +133,15 @@ export function applyGameMove(
     const oppColor: Color = expectedColor === 'w' ? 'b' : 'w';
     const oppSeat = seatOnBoard(boardId, oppColor);
     if (inCheck(result.state, oppColor) && !hasAnyEscape(result.state, oppColor, gs.hands[oppSeat])) {
-      gs.status = 'ended';
-      gs.result = {
-        winningTeam: teamOf(seat),
-        reason: 'checkmate',
-        losingSeat: oppSeat,
-        boardId,
-      };
+      if (!partnerCanSend(gs, oppSeat) || !couldEscapeWithAnyDrop(result.state, oppColor)) {
+        gs.status = 'ended';
+        gs.result = {
+          winningTeam: teamOf(seat),
+          reason: 'checkmate',
+          losingSeat: oppSeat,
+          boardId,
+        };
+      }
     }
   }
 
@@ -176,13 +178,50 @@ export function applyGameDrop(
     const oppSeat = seatOnBoard(boardId, oppColor);
     const oppHand = gs.hands[oppSeat];
     if (!hasAnyEscape(next, oppColor, oppHand)) {
-      throw new DropError('mate-by-drop');
+      if (!partnerCanSend(gs, oppSeat) || !couldEscapeWithAnyDrop(next, oppColor)) {
+        throw new DropError('mate-by-drop');
+      }
     }
   }
 
   gs.boards[boardId] = next;
   gs.hands[seat] = { ...hand, [drop.piece]: available - 1 };
   return { ok: true };
+}
+
+// Returns true if any piece type dropped on any empty square would get the
+// king out of check. Used to determine whether a future piece from the partner
+// could theoretically help (regardless of what's currently in hand).
+function couldEscapeWithAnyDrop(state: BoardState, color: Color): boolean {
+  const oppColor: Color = color === 'w' ? 'b' : 'w';
+  for (const pt of ['Q', 'R', 'B', 'N', 'P'] as DropPieceType[]) {
+    for (let s = 0; s < 64; s++) {
+      if (state.board[s]) continue;
+      if (pt === 'P') {
+        const r = rankOf(s);
+        if (r === 0 || r === 7) continue;
+      }
+      const test = state.board.slice();
+      test[s] = { type: pt, color, wasPromoted: false };
+      const k = findKingIn(test, color);
+      if (k === null) continue;
+      if (!isAttacked(test, k, oppColor)) return true;
+    }
+  }
+  return false;
+}
+
+// Returns true if the partner's board still has enemy (non-king) pieces that
+// could be captured and sent to `seat`.
+function partnerCanSend(gs: GameState, seat: Seat): boolean {
+  const partner = partnerOf(seat);
+  const partnerBoard = gs.boards[seatBoard(partner)];
+  const enemyColor: Color = seatColor(partner) === 'w' ? 'b' : 'w';
+  for (let i = 0; i < 64; i++) {
+    const p = partnerBoard.board[i];
+    if (p && p.color === enemyColor && p.type !== 'K') return true;
+  }
+  return false;
 }
 
 // Returns true if the side-to-move (color) has any move OR drop that gets
@@ -357,13 +396,15 @@ export function applyGamePromotion(
   const oppColor: Color = color === 'w' ? 'b' : 'w';
   const oppSeat = seatOnBoard(boardId, oppColor);
   if (inCheck(promotedAfter, oppColor) && !hasAnyEscape(promotedAfter, oppColor, gs.hands[oppSeat])) {
-    gs.status = 'ended';
-    gs.result = {
-      winningTeam: teamOf(seat),
-      reason: 'checkmate',
-      losingSeat: oppSeat,
-      boardId,
-    };
+    if (!partnerCanSend(gs, oppSeat) || !couldEscapeWithAnyDrop(promotedAfter, oppColor)) {
+      gs.status = 'ended';
+      gs.result = {
+        winningTeam: teamOf(seat),
+        reason: 'checkmate',
+        losingSeat: oppSeat,
+        boardId,
+      };
+    }
   }
 
   return { takenType };
