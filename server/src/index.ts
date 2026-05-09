@@ -98,7 +98,37 @@ const server = createServer((req, res) => {
   serveFile(filePath, res);
 });
 
-const wss = new WebSocketServer({ server, path: '/ws' });
+// Manual upgrade so we can enforce an Origin allowlist and rate-limit
+// WS handshakes before allocating a WebSocket. maxPayload is far below
+// ws's 100 MiB default — no legitimate client message exceeds ~1 KB.
+const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+
+function isAllowedOrigin(origin: string, host: string): boolean {
+  if (!origin) return false;
+  if (origin === `https://${host}` || origin === `http://${host}`) return true;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+server.on('upgrade', (req, socket, head) => {
+  if (req.url !== '/ws') {
+    socket.destroy();
+    return;
+  }
+  const origin = (req.headers.origin as string | undefined) ?? '';
+  const host = (req.headers.host as string | undefined) ?? '';
+  if (!isAllowedOrigin(origin, host)) {
+    socket.destroy();
+    return;
+  }
+  if (!wsUpgradeLimiter.take(clientIp(req))) {
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    wss.emit('connection', ws, req);
+  });
+});
+
 wss.on('connection', (ws) => cm.handleConnection(ws));
 
 server.listen(PORT, () => {
