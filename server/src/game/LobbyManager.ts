@@ -1,4 +1,5 @@
 import { GameState, Seat, SEATS, isValidSeat, teamOf } from '@bughouse/shared';
+import { randomInt } from 'node:crypto';
 import { createGameState } from '../engine/game.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -36,7 +37,7 @@ export class LobbyManager {
     let code: string;
     do {
       code = Array.from({ length: 6 }, () =>
-        CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]!,
+        CODE_CHARS[randomInt(CODE_CHARS.length)]!,
       ).join('');
     } while (this.rooms.has(code));
 
