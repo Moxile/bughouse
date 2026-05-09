@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Seat, seatColor, seatBoard } from '@bughouse/shared';
 import type { GameStore } from '../hooks/useGame.js';
+
+type RoomSummary = {
+  code: string;
+  status: 'lobby' | 'playing';
+  players: (string | null)[];
+};
 
 const SEAT_LABELS = ['Board 1 — White', 'Board 1 — Black', 'Board 2 — Black', 'Board 2 — White'];
 
@@ -24,6 +30,18 @@ type Props = {
 
 export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
   const { yourSeat } = store;
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
+
+  useEffect(() => {
+    const load = () =>
+      fetch('/api/games')
+        .then((r) => r.json())
+        .then(setRooms)
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 4000);
+    return () => clearInterval(id);
+  }, []);
 
   const handleClaim = (seat: Seat) => {
     send({ type: 'claim-seat', seat });
@@ -230,6 +248,55 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
           All 4 players must click <strong style={{ color: 'rgba(255,255,255,0.45)' }}>Ready</strong> to start.
           Game begins automatically.
         </div>
+
+        {/* Active games */}
+        {rooms.length > 0 && (
+          <div style={{ marginTop: 36 }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10, color: 'rgba(255,255,255,0.35)',
+              letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
+            }}>Active games</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {rooms.map((r) => {
+                const isCurrent = r.code === code;
+                const filled = r.players.filter(Boolean);
+                return (
+                  <div
+                    key={r.code}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: isCurrent ? 'rgba(86,219,211,0.05)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${isCurrent ? 'rgba(86,219,211,0.2)' : 'rgba(255,255,255,0.06)'}`,
+                      borderRadius: 8, padding: '8px 12px',
+                    }}
+                  >
+                    <span style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 12, color: isCurrent ? '#56dbd3' : 'rgba(255,255,255,0.5)',
+                      letterSpacing: 1, flexShrink: 0,
+                    }}>{r.code}</span>
+                    <span style={{
+                      fontSize: 10, flexShrink: 0,
+                      padding: '2px 7px', borderRadius: 4,
+                      fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5,
+                      background: r.status === 'playing' ? 'rgba(52,211,153,0.12)' : 'rgba(251,191,36,0.12)',
+                      color: r.status === 'playing' ? '#34d399' : '#fbbf24',
+                    }}>{r.status === 'playing' ? 'LIVE' : 'WAITING'}</span>
+                    <span style={{
+                      flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.45)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{filled.join(', ') || 'No players yet'}</span>
+                    <span style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 10, color: 'rgba(255,255,255,0.25)', flexShrink: 0,
+                    }}>{filled.length}/4</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

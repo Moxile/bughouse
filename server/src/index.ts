@@ -52,6 +52,12 @@ const server = createServer((req, res) => {
     return;
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/games') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(cm.listRooms()));
+    return;
+  }
+
   // Static files.
   const filePath = url.pathname === '/'
     ? join(CLIENT_DIST, 'index.html')

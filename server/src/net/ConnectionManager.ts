@@ -68,6 +68,16 @@ export class ConnectionManager {
     return room.code;
   }
 
+  listRooms(): { code: string; status: string; players: (string | null)[] }[] {
+    return this.lobby.allRooms()
+      .filter((r) => r.game.status !== 'ended')
+      .map((r) => ({
+        code: r.code,
+        status: r.game.status,
+        players: ([0, 1, 2, 3] as Seat[]).map((s) => r.slots.get(s)?.name ?? null),
+      }));
+  }
+
   private handleMessage(cs: ClientState, msg: ClientMessage): void {
     switch (msg.type) {
       case 'join': return this.handleJoin(cs, msg);
