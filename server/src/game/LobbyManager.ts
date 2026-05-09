@@ -148,4 +148,8 @@ export class LobbyManager {
   allRooms(): Room[] {
     return [...this.rooms.values()];
   }
+
+  roomCount(): number {
+    return this.rooms.size;
+  }
 }

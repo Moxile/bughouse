@@ -40,6 +40,7 @@ type ClientState = {
 };
 
 const PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_ROOMS = 5000;
 
 export class ConnectionManager {
   private lobby = new LobbyManager();
@@ -86,7 +87,8 @@ export class ConnectionManager {
     });
   }
 
-  createRoom(): string {
+  createRoom(): string | null {
+    if (this.lobby.roomCount() >= MAX_ROOMS) return null;
     const room = this.lobby.createRoom();
     return room.code;
   }

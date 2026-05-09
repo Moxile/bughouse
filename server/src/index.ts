@@ -1,8 +1,30 @@
-import { createServer } from 'node:http';
+import { createServer, IncomingMessage } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join, extname, resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { ConnectionManager } from './net/ConnectionManager.js';
+import { TokenBucket } from './net/RateLimiter.js';
+
+// Per-IP throttles. Capacity = burst, refill = sustained rate per second.
+// Hand-rolled (in-memory, single-machine) — fine for the current Fly setup.
+const roomCreateLimiter = new TokenBucket(5, 1 / 10); // 5 burst, 1 per 10s
+const wsUpgradeLimiter = new TokenBucket(20, 1);      // 20 burst, 1/s
+
+// Trust the first hop for x-forwarded-for; Fly proxies set this.
+function clientIp(req: IncomingMessage): string {
+  const xf = req.headers['x-forwarded-for'];
+  if (typeof xf === 'string') {
+    const first = xf.split(',')[0]?.trim();
+    if (first) return first;
+  }
+  return req.socket.remoteAddress ?? 'unknown';
+}
+
+// Drop idle bucket entries periodically.
+setInterval(() => {
+  roomCreateLimiter.prune();
+  wsUpgradeLimiter.prune();
+}, 10 * 60 * 1000).unref();
 
 const PORT = Number(process.env.PORT ?? 3000);
 // When run via npm workspace scripts, cwd = the server package directory.
@@ -46,7 +68,18 @@ const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
   if (req.method === 'POST' && url.pathname === '/api/games') {
+    const ip = clientIp(req);
+    if (!roomCreateLimiter.take(ip)) {
+      res.writeHead(429, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'rate-limited' }));
+      return;
+    }
     const code = cm.createRoom();
+    if (code === null) {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'server-full' }));
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ code }));
     return;
