@@ -29,6 +29,7 @@ export function RulesPage({ onBack }: Props) {
           <li>When a pawn reaches the last rank, you must pick any non-king, non-pawn piece that is currently on your <em>diagonal opponent's</em> board to promote into.</li>
           <li>That piece is removed from the diagonal opponent's board and placed on your board as the promoted pawn. Your original pawn goes to the diagonal opponent's hand.</li>
           <li>If there is no eligible piece on the diagonal opponent's board, the pawn <strong>cannot</strong> advance to the last rank — the move is illegal.</li>
+          <li>You cannot select a piece that is <em>pinned</em> on the diagonal opponent's board — a piece whose removal would leave that player's king exposed to immediate capture. If all eligible pieces are pinned, the pawn cannot advance to the last rank either.</li>
           <li>If a promoted piece is later captured, it keeps its promoted type and goes to the capturer's partner's hand.</li>
         </ul>
       </Section>

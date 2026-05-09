@@ -7,6 +7,7 @@ import {
   Square,
   diagonalOf,
   fileOf,
+  getValidPromotionSquares,
   rankOf,
   seatBoard,
   seatColor,
@@ -619,7 +620,9 @@ export function GameView({ store, send, onHome }: Props) {
     if (inPromoMode && boardId === myBoardId) return null;
 
     if (inPromoMode && boardId === diagBoardId) {
-      return { mode: 'promotion-pick', onPick: handlePromoSelect, onCancel: handlePromoCancel };
+      const diagBoard = game.boards[diagBoardId];
+      const validSquares = diagColor !== null ? getValidPromotionSquares(diagBoard, diagColor) : undefined;
+      return { mode: 'promotion-pick', onPick: handlePromoSelect, onCancel: handlePromoCancel, validSquares };
     }
 
     if (seatBoard(yourSeat) !== boardId) return null;

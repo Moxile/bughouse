@@ -377,6 +377,9 @@ export function applyGamePromotion(
   if (taken.type === 'K' || taken.type === 'P') {
     throw new PromotionFlowError('wrong-target-color');
   }
+  if (wouldExposeKingAfterRemoval(gs.boards[diagBoardId], diagonalSquare)) {
+    throw new PromotionFlowError('pinned-piece');
+  }
 
   const { state: diagAfter, takenType } = applyPromotionOnDiagonalBoard(
     gs.boards[diagBoardId],
@@ -433,9 +436,9 @@ export function cancelGamePromotion(gs: GameState, seat: Seat): void {
 }
 
 // True if the given seat's pawn can legally promote at all (i.e., the
-// diagonal opponent has at least one non-king, non-pawn piece). The engine
-// uses this to filter pawn-moves to the last rank: if no eligible target
-// exists on the diagonal board, the move is forbidden.
+// diagonal opponent has at least one non-king, non-pawn, non-pinned piece).
+// The engine uses this to filter pawn-moves to the last rank: if no eligible
+// target exists on the diagonal board, the move is forbidden.
 export function diagonalHasEligiblePromotionTarget(
   gs: GameState,
   seat: Seat,
@@ -443,12 +446,43 @@ export function diagonalHasEligiblePromotionTarget(
   const diagSeat = diagonalOf(seat);
   const diagBoardId = seatBoard(diagSeat);
   const diagColor = seatColor(diagSeat);
-  const b = gs.boards[diagBoardId].board;
+  const diagBoard = gs.boards[diagBoardId];
+  const b = diagBoard.board;
   for (let i = 0; i < 64; i++) {
     const p = b[i];
-    if (p && p.color === diagColor && p.type !== 'K' && p.type !== 'P') return true;
+    if (p && p.color === diagColor && p.type !== 'K' && p.type !== 'P') {
+      if (!wouldExposeKingAfterRemoval(diagBoard, i)) return true;
+    }
   }
   return false;
+}
+
+// Returns a set of squares on the diagonal board that are valid promotion
+// targets: pieces belonging to diagColor, not king or pawn, and not pinned
+// (removing them would not expose diagColor's king to capture).
+export function getValidPromotionSquares(diagBoard: BoardState, diagColor: Color): Set<Square> {
+  const valid = new Set<Square>();
+  for (let i = 0; i < 64; i++) {
+    const p = diagBoard.board[i];
+    if (p && p.color === diagColor && p.type !== 'K' && p.type !== 'P') {
+      if (!wouldExposeKingAfterRemoval(diagBoard, i)) valid.add(i as Square);
+    }
+  }
+  return valid;
+}
+
+// Returns true if removing the piece at `square` from `diagBoard` would leave
+// that piece's king exposed to immediate capture (i.e., the piece is pinned).
+function wouldExposeKingAfterRemoval(diagBoard: BoardState, square: Square): boolean {
+  const piece = diagBoard.board[square];
+  if (!piece) return false;
+  const kingColor = piece.color;
+  const oppColor: Color = kingColor === 'w' ? 'b' : 'w';
+  const test = diagBoard.board.slice() as BoardState['board'];
+  test[square] = null;
+  const kingSquare = findKingIn(test, kingColor);
+  if (kingSquare === null) return false;
+  return isSquareAttackedInline(test, kingSquare, oppColor);
 }
 
 // ---------------- Errors / helpers ----------------
@@ -470,7 +504,8 @@ export class MoveError extends Error {
 export type PromotionFlowReason =
   | 'no-pending'
   | 'wrong-color'
-  | 'wrong-target-color';
+  | 'wrong-target-color'
+  | 'pinned-piece';
 
 export class PromotionFlowError extends Error {
   constructor(public reason: PromotionFlowReason) {

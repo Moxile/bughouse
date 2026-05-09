@@ -14,7 +14,7 @@ https://www.facebook.com/61565311126427/posts/122098056560510370/
 * The pawn is then given to the diagonally opposite player.
 
 **Important:**
-Yes, this can create *illegal positions*. That’s intentional. The current version allows this, including cases where a king can just be captured outright — which counts as a win.
+You cannot select a piece that is **pinned** on the diagonal opponent’s board — i.e., a piece whose removal would leave the diagonal opponent’s king exposed to immediate capture. Pinned pieces are not eligible promotion targets, and a pawn cannot advance to the last rank if all eligible pieces on the diagonal board are pinned.
 
 ### Checkmate Rules
 

@@ -12,6 +12,7 @@ export function HomePage({ onJoin, onRules }: Props) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [liveGames, setLiveGames] = useState<RoomSummary[]>([]);
+  const [hoveredCode, setHoveredCode] = useState<string | null>(null);
 
   useEffect(() => {
     const load = () =>
@@ -206,12 +207,18 @@ export function HomePage({ onJoin, onRules }: Props) {
               {liveGames.map((r) => {
                 const players = r.players.filter(Boolean) as string[];
                 return (
-                  <div key={r.code} style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    background: 'rgba(52,211,153,0.04)',
-                    border: '1px solid rgba(52,211,153,0.15)',
-                    borderRadius: 8, padding: '8px 12px',
-                  }}>
+                  <div key={r.code}
+                    onClick={() => onJoin(r.code)}
+                    onMouseEnter={() => setHoveredCode(r.code)}
+                    onMouseLeave={() => setHoveredCode(null)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10,
+                      background: hoveredCode === r.code ? 'rgba(52,211,153,0.10)' : 'rgba(52,211,153,0.04)',
+                      border: '1px solid rgba(52,211,153,0.15)',
+                      borderRadius: 8, padding: '8px 12px',
+                      cursor: 'pointer',
+                      transition: 'background 0.15s',
+                    }}>
                     <span style={{
                       display: 'inline-flex', alignItems: 'center', gap: 5,
                       fontSize: 10, flexShrink: 0,

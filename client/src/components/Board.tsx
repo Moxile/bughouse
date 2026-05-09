@@ -27,7 +27,7 @@ export type BoardInteraction =
       getMoveTargets?: (from: Square) => Set<Square>;
       onMove?: (from: Square, to: Square) => void;
     }
-  | { mode: 'promotion-pick'; onPick: (sq: Square) => void; onCancel?: () => void };
+  | { mode: 'promotion-pick'; onPick: (sq: Square) => void; onCancel?: () => void; validSquares?: Set<Square> };
 
 type Props = {
   board: BoardType;
@@ -109,10 +109,15 @@ export function Board({
 
     // Promotion pick: click only, no drag
     if (interaction.mode === 'promotion-pick') {
-      const { onPick, onCancel } = interaction;
+      const { onPick, onCancel, validSquares } = interaction;
       const piece = board[s];
       document.addEventListener('pointerup', () => {
-        if (piece && piece.color === promotionPickColor && piece.type !== 'K' && piece.type !== 'P') {
+        const isValid = piece &&
+          piece.color === promotionPickColor &&
+          piece.type !== 'K' &&
+          piece.type !== 'P' &&
+          (!validSquares || validSquares.has(s));
+        if (isValid) {
           onPick(s);
         } else {
           onCancel?.();
