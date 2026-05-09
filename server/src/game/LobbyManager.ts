@@ -1,4 +1,4 @@
-import { GameState, Seat, SEATS, teamOf } from '@bughouse/shared';
+import { GameState, Seat, SEATS, isValidSeat, teamOf } from '@bughouse/shared';
 import { createGameState } from '../engine/game.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -73,6 +73,7 @@ export class LobbyManager {
     name: string,
     playerId: string,
   ): PlayerSlot | null {
+    if (!isValidSeat(seat)) return null;
     if (room.game.status !== 'lobby') return null;
     if (room.slots.has(seat)) {
       // Allow re-claim if same playerId (reconnect).

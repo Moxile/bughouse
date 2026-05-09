@@ -10,8 +10,10 @@ import {
   SEATS,
   ServerMessage,
   createGameState,
+  isValidSeat,
   partnerOf,
   teamOf,
+  validateClientMessage,
 } from '@bughouse/shared';
 import { LobbyManager, Room } from '../game/LobbyManager.js';
 import { ClockManager } from '../game/ClockManager.js';
@@ -63,12 +65,19 @@ export class ConnectionManager {
     this.clients.set(ws, cs);
 
     ws.on('message', (raw) => {
+      let parsed: unknown;
       try {
-        const msg = JSON.parse(raw.toString()) as ClientMessage;
-        this.handleMessage(cs, msg);
+        parsed = JSON.parse(raw.toString());
       } catch {
         this.send(ws, { type: 'error', reason: 'invalid-message' });
+        return;
       }
+      const msg = validateClientMessage(parsed);
+      if (!msg) {
+        this.send(ws, { type: 'error', reason: 'invalid-message' });
+        return;
+      }
+      this.handleMessage(cs, msg);
     });
 
     ws.on('close', () => {

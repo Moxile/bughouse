@@ -78,7 +78,9 @@ export class ClockManager {
   ): void {
     this.cancelFlagTimer(seat);
     const remaining = gs.clocks[seat];
-    if (remaining <= 0) {
+    // Defensive: a non-finite clock (NaN/Infinity) is a programmer error
+    // upstream; flag immediately rather than passing NaN to setTimeout.
+    if (!Number.isFinite(remaining) || remaining <= 0) {
       onFlag(seat);
       return;
     }
