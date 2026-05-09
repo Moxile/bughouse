@@ -20,6 +20,10 @@ export type C_Ready = {
   type: 'ready';
 };
 
+export type C_Unready = {
+  type: 'unready';
+};
+
 export type C_Move = {
   type: 'move';
   boardId: BoardId;
@@ -61,6 +65,7 @@ export type ClientMessage =
   | C_Join
   | C_ClaimSeat
   | C_Ready
+  | C_Unready
   | C_Move
   | C_Drop
   | C_PromotionSelect

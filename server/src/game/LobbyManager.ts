@@ -95,6 +95,11 @@ export class LobbyManager {
     );
   }
 
+  setUnready(room: Room, seat: Seat): void {
+    const slot = room.slots.get(seat);
+    if (slot) slot.ready = false;
+  }
+
   handleDisconnect(
     room: Room,
     seat: Seat,

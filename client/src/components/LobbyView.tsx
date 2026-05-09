@@ -33,6 +33,10 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
     send({ type: 'ready' });
   };
 
+  const handleUnready = () => {
+    send({ type: 'unready' });
+  };
+
   const url = `${location.origin}/g/${code}`;
 
   return (
@@ -165,7 +169,18 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
                       flexShrink: 0,
                     }}>{name[0]?.toUpperCase()}</div>
                     <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
-                    {ready ? (
+                    {ready && isMine ? (
+                      <button
+                        onClick={handleUnready}
+                        style={{
+                          padding: '4px 12px',
+                          background: 'transparent', color: '#34d399',
+                          border: '1px solid #34d39955', borderRadius: 5,
+                          cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                          fontFamily: "'Geist', 'Inter', sans-serif",
+                        }}
+                      >✓ READY ✕</button>
+                    ) : ready ? (
                       <span style={{
                         fontFamily: "'JetBrains Mono', monospace",
                         fontSize: 10, color: '#34d399',

@@ -73,6 +73,7 @@ export class ConnectionManager {
       case 'join': return this.handleJoin(cs, msg);
       case 'claim-seat': return this.handleClaimSeat(cs, msg);
       case 'ready': return this.handleReady(cs);
+      case 'unready': return this.handleUnready(cs);
       case 'move': return this.handleMove(cs, msg);
       case 'drop': return this.handleDrop(cs, msg);
       case 'promotion-select': return this.handlePromotionSelect(cs, msg);
@@ -141,6 +142,16 @@ export class ConnectionManager {
     } else {
       this.broadcastState(cs.room);
     }
+  }
+
+  private handleUnready(cs: ClientState): void {
+    if (!cs.room || cs.seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (cs.room.game.status !== 'lobby') return;
+    this.lobby.setUnready(cs.room, cs.seat);
+    this.broadcastState(cs.room);
   }
 
   private startGame(room: Room): void {
