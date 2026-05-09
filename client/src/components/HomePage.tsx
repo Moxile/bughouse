@@ -1,10 +1,28 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+
+type RoomSummary = {
+  code: string;
+  status: 'lobby' | 'playing';
+  players: (string | null)[];
+};
 
 type Props = { onJoin: (code: string) => void; onRules: () => void };
 
 export function HomePage({ onJoin, onRules }: Props) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [liveGames, setLiveGames] = useState<RoomSummary[]>([]);
+
+  useEffect(() => {
+    const load = () =>
+      fetch('/api/games')
+        .then((r) => r.json())
+        .then((rooms: RoomSummary[]) => setLiveGames(rooms.filter((r) => r.status === 'playing')))
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 4000);
+    return () => clearInterval(id);
+  }, []);
 
   const createGame = async () => {
     setLoading(true);
@@ -175,6 +193,54 @@ export function HomePage({ onJoin, onRules }: Props) {
             Discord
           </a>
         </p>
+
+        {liveGames.length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10, color: 'rgba(255,255,255,0.35)',
+              letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
+              textAlign: 'center',
+            }}>Live games</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {liveGames.map((r) => {
+                const players = r.players.filter(Boolean) as string[];
+                return (
+                  <div key={r.code} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    background: 'rgba(52,211,153,0.04)',
+                    border: '1px solid rgba(52,211,153,0.15)',
+                    borderRadius: 8, padding: '8px 12px',
+                  }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      fontSize: 10, flexShrink: 0,
+                      fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5,
+                      color: '#34d399',
+                    }}>
+                      <span style={{
+                        width: 6, height: 6, borderRadius: '50%',
+                        background: '#34d399',
+                        boxShadow: '0 0 6px #34d399',
+                        display: 'inline-block',
+                      }} />
+                      LIVE
+                    </span>
+                    <span style={{
+                      flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.5)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{players.join(' · ')}</span>
+                    <span style={{
+                      fontFamily: "'JetBrains Mono', monospace",
+                      fontSize: 11, color: 'rgba(255,255,255,0.2)', flexShrink: 0,
+                      letterSpacing: 1,
+                    }}>{r.code}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
