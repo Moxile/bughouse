@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { join, extname, resolve } from 'node:path';
+import { join, extname, resolve, sep } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { ConnectionManager } from './net/ConnectionManager.js';
 import { TokenBucket } from './net/RateLimiter.js';
@@ -29,8 +29,32 @@ setInterval(() => {
 const PORT = Number(process.env.PORT ?? 3000);
 // When run via npm workspace scripts, cwd = the server package directory.
 // CLIENT_DIST env var overrides for custom deployments.
-const CLIENT_DIST = process.env.CLIENT_DIST
-  ?? resolve(process.cwd(), '../client/dist');
+const CLIENT_DIST = resolve(
+  process.env.CLIENT_DIST ?? resolve(process.cwd(), '../client/dist'),
+);
+
+// Applied to every HTTP response. Inline styles are required by React
+// style props, so style-src needs 'unsafe-inline'. Scripts stay strict.
+const SECURITY_HEADERS: Record<string, string> = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'Permissions-Policy': 'interest-cohort=()',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+  'Content-Security-Policy': [
+    "default-src 'self'",
+    "img-src 'self' data:",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "connect-src 'self' ws: wss:",
+    "script-src 'self'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+  ].join('; '),
+};
+
+function setSecurityHeaders(res: import('node:http').ServerResponse): void {
+  for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+}
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -65,6 +89,7 @@ function serveFile(path: string, res: import('node:http').ServerResponse): void 
 const cm = new ConnectionManager();
 
 const server = createServer((req, res) => {
+  setSecurityHeaders(res);
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
   if (req.method === 'POST' && url.pathname === '/api/games') {
@@ -91,11 +116,18 @@ const server = createServer((req, res) => {
     return;
   }
 
-  // Static files.
-  const filePath = url.pathname === '/'
+  // Static files. Resolve under CLIENT_DIST and reject anything that escapes
+  // it. URL parsing already normalises ".." segments, but enforcing it here
+  // is cheap defense-in-depth.
+  const requested = url.pathname === '/'
     ? join(CLIENT_DIST, 'index.html')
-    : join(CLIENT_DIST, url.pathname);
-  serveFile(filePath, res);
+    : resolve(CLIENT_DIST, '.' + url.pathname);
+  if (requested !== CLIENT_DIST && !requested.startsWith(CLIENT_DIST + sep)) {
+    res.writeHead(403);
+    res.end('Forbidden');
+    return;
+  }
+  serveFile(requested, res);
 });
 
 // Manual upgrade so we can enforce an Origin allowlist and rate-limit
