@@ -7,7 +7,7 @@ import { TokenBucket } from './net/RateLimiter.js';
 
 // Per-IP throttles. Capacity = burst, refill = sustained rate per second.
 // Hand-rolled (in-memory, single-machine) — fine for the current Fly setup.
-const roomCreateLimiter = new TokenBucket(5, 1 / 10); // 5 burst, 1 per 10s
+const roomCreateLimiter = new TokenBucket(10, 1 / 5); // 10 burst, 1 per 5s
 const wsUpgradeLimiter = new TokenBucket(20, 1);      // 20 burst, 1/s
 
 // Trust the first hop for x-forwarded-for; Fly proxies set this.
