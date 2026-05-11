@@ -1,5 +1,5 @@
-import { GameEvent, GameState, Seat, SEATS, teamOf } from '@bughouse/shared';
-import { randomUUID } from 'node:crypto';
+import { GameEvent, GameState, Seat, isValidSeat } from '@bughouse/shared';
+import { randomUUID, randomInt } from 'node:crypto';
 import { createGameState } from '../engine/game.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -48,7 +48,7 @@ export class LobbyManager {
     let code: string;
     do {
       code = Array.from({ length: 6 }, () =>
-        CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]!,
+        CODE_CHARS[randomInt(CODE_CHARS.length)]!,
       ).join('');
     } while (this.rooms.has(code));
 
@@ -88,6 +88,7 @@ export class LobbyManager {
     name: string,
     playerId: string,
   ): PlayerSlot | null {
+    if (!isValidSeat(seat)) return null;
     if (room.game.status !== 'lobby') return null;
     if (room.slots.has(seat)) {
       // Allow re-claim if same playerId (reconnect).
@@ -123,6 +124,10 @@ export class LobbyManager {
   ): void {
     const slot = room.slots.get(seat);
     if (!slot) return;
+    // A pending timer from an earlier disconnect must be cleared here, not
+    // just on reconnect: rapid disconnect→disconnect cycles would otherwise
+    // leak the first timer and forfeit a player who is currently connected.
+    if (slot.disconnectTimer) clearTimeout(slot.disconnectTimer);
     slot.connected = false;
     slot.disconnectTimer = setTimeout(() => {
       onTimeout(room, seat);
@@ -157,4 +162,9 @@ export class LobbyManager {
   allRooms(): Room[] {
     return [...this.rooms.values()];
   }
+
+  roomCount(): number {
+    return this.rooms.size;
+  }
 }
+

@@ -14,13 +14,16 @@ import {
   SEATS,
   ServerMessage,
   createGameState,
+  isValidSeat,
   partnerOf,
   seatBoard,
   teamOf,
+  validateClientMessage,
 } from '@bughouse/shared';
 import { GameStore } from '../storage/SqliteGameStore.js';
 import { LobbyManager, Room } from '../game/LobbyManager.js';
 import { ClockManager } from '../game/ClockManager.js';
+import { TokenBucket } from './RateLimiter.js';
 import {
   DropError,
   applyDropRaw,
@@ -41,9 +44,17 @@ type ClientState = {
   seat: Seat | null;
   room: Room | null;
   name: string | null;
+  // Per-connection inbound bucket. Bounds the cost of broadcastState fan-out
+  // and protects against a misbehaving or malicious client flooding moves.
+  bucket: TokenBucket;
 };
 
+// 30 burst, 10 messages/sec sustained. Comfortably above any human play rate.
+const INBOUND_BURST = 30;
+const INBOUND_PER_SEC = 10;
+
 const PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_ROOMS = 5000;
 
 export class ConnectionManager {
   private lobby = new LobbyManager();
@@ -65,16 +76,34 @@ export class ConnectionManager {
   }
 
   handleConnection(ws: WebSocket): void {
-    const cs: ClientState = { ws, playerId: null, seat: null, room: null, name: null };
+    const cs: ClientState = {
+      ws,
+      playerId: null,
+      seat: null,
+      room: null,
+      name: null,
+      bucket: new TokenBucket(INBOUND_BURST, INBOUND_PER_SEC),
+    };
     this.clients.set(ws, cs);
 
     ws.on('message', (raw) => {
+      if (!cs.bucket.take('self')) {
+        this.send(ws, { type: 'error', reason: 'rate-limited' });
+        return;
+      }
+      let parsed: unknown;
       try {
-        const msg = JSON.parse(raw.toString()) as ClientMessage;
-        this.handleMessage(cs, msg);
+        parsed = JSON.parse(raw.toString());
       } catch {
         this.send(ws, { type: 'error', reason: 'invalid-message' });
+        return;
       }
+      const msg = validateClientMessage(parsed);
+      if (!msg) {
+        this.send(ws, { type: 'error', reason: 'invalid-message' });
+        return;
+      }
+      this.handleMessage(cs, msg);
     });
 
     ws.on('close', () => {
@@ -83,7 +112,8 @@ export class ConnectionManager {
     });
   }
 
-  createRoom(): string {
+  createRoom(): string | null {
+    if (this.lobby.roomCount() >= MAX_ROOMS) return null;
     const room = this.lobby.createRoom();
     return room.code;
   }
