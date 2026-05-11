@@ -1,0 +1,16 @@
+services:
+  bughouse:
+    build:
+      context: .
+    container_name: bughouse
+    init: true
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/bughouse.db
+    volumes:
+      - bughouse-data:/data
+
+volumes:
+  bughouse-data:

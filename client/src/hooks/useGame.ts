@@ -14,6 +14,7 @@ const EMPTY: GameStore = {
   names: { 0: null, 1: null, 2: null, 3: null },
   ready: { 0: false, 1: false, 2: false, 3: false },
   connected: { 0: false, 1: false, 2: false, 3: false },
+  events: [],
   errors: [],
   chatMessages: [],
 };

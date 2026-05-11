@@ -116,6 +116,9 @@ export type GameState = {
   initialClockMs: number;
   // Tracks which seated players have voted for a rematch (status === 'ended').
   rematchVotes: Record<Seat, boolean>;
+  // Wins per team across the current series (rematches in the same room).
+  // Index 0 = team {0,2}, index 1 = team {1,3}.
+  seriesScore: [number, number];
 };
 
 // ---------------- Helpers ----------------

@@ -3,12 +3,16 @@ import { readFileSync } from 'node:fs';
 import { join, extname, resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { ConnectionManager } from './net/ConnectionManager.js';
+import { SqliteGameStore } from './storage/SqliteGameStore.js';
 
 const PORT = Number(process.env.PORT ?? 3000);
 // When run via npm workspace scripts, cwd = the server package directory.
 // CLIENT_DIST env var overrides for custom deployments.
 const CLIENT_DIST = process.env.CLIENT_DIST
   ?? resolve(process.cwd(), '../client/dist');
+// SQLite file for persisted game records. In Docker, mount a volume on the
+// parent dir; on Fly, attach a volume.
+const DB_PATH = process.env.DB_PATH ?? resolve(process.cwd(), '../data/bughouse.db');
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -40,7 +44,17 @@ function serveFile(path: string, res: import('node:http').ServerResponse): void 
   }
 }
 
-const cm = new ConnectionManager();
+const store = new SqliteGameStore(DB_PATH);
+const cm = new ConnectionManager(store);
+console.log(`SQLite store ready at ${DB_PATH}`);
+
+// Best-effort clean shutdown so WAL mode flushes properly.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    try { store.close(); } catch {}
+    process.exit(0);
+  });
+}
 
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);

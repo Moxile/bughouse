@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BughouseIcon } from './BughouseIcon';
 import {
   BoardId,
@@ -6,6 +6,10 @@ import {
   DropPieceType,
   Seat,
   Square,
+  applyGameDrop,
+  applyGameMove,
+  applyGamePromotion,
+  createGameState,
   diagonalOf,
   fileOf,
   getValidPromotionSquares,
@@ -13,6 +17,7 @@ import {
   seatBoard,
   seatColor,
   sq,
+  teamOf,
 } from '@bughouse/shared';
 import type { GameStore } from '../hooks/useGame.js';
 import { Board, BoardInteraction, PremoveState } from './Board.js';
@@ -20,6 +25,7 @@ import { HandPanel } from './HandPanel.js';
 import { ChessPiece, PieceType } from './ChessPiece.js';
 import { PlayerStrip } from './PlayerStrip.js';
 import { ChatPanel } from './ChatPanel.js';
+import { NotationPanel } from './NotationPanel.js';
 import { legalMoves, pseudoLegalMoves } from '../lib/legalMoves.js';
 import { COLOR_SCHEMES, ColorScheme, loadScheme, saveScheme } from '../themes.js';
 import { PIECE_SETS, PieceSet, loadPieceSet, savePieceSet } from '../pieceSets.js';
@@ -396,6 +402,12 @@ function useBoardLayout() {
 
 export function GameView({ store, send, onHome }: Props) {
   const { game, yourSeat } = store;
+
+  // Derived early so they can be used in hooks below.
+  const myBoardIdEarly = yourSeat !== null ? seatBoard(yourSeat) : null;
+  const ownBoardId: BoardId = myBoardIdEarly ?? 0;
+  const partnerBoardId: BoardId = (1 - ownBoardId) as BoardId;
+
   const [soundSet, setSoundSet] = useState<SoundSetKey>(loadSoundSet);
   useGameSounds(game, yourSeat, soundSet);
   const [colorScheme, setColorScheme] = useState<ColorScheme>(loadScheme);
@@ -416,6 +428,82 @@ export function GameView({ store, send, onHome }: Props) {
     setSoundSet(k);
     saveSoundSet(k);
   }, []);
+
+  // Review mode: null = live, n = viewing after the nth own-board move.
+  const [reviewPos, setReviewPos] = useState<number | null>(null);
+
+  // Reset review when a new game starts (events cleared on rematch).
+  useEffect(() => {
+    if (store.events.length === 0) setReviewPos(null);
+  }, [store.events.length]);
+
+  // Global indices (0-based) of events that belong to the own board.
+  const ownEventIndices = useMemo(
+    () => store.events.reduce<number[]>((acc, e, i) => {
+      if (e.boardId === ownBoardId) acc.push(i);
+      return acc;
+    }, []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [store.events.length, ownBoardId],
+  );
+
+  // Board state replayed up to and including ownEventIndices[reviewPos].
+  const viewGame = useMemo(() => {
+    if (reviewPos === null || game === null) return game;
+    const globalIdx = ownEventIndices[reviewPos];
+    if (globalIdx === undefined) return game;
+    const gs = createGameState(game.code, 0, game.initialClockMs);
+    for (let i = 0; i <= globalIdx; i++) {
+      const ev = store.events[i];
+      if (!ev) break;
+      try {
+        if (ev.kind === 'move') {
+          applyGameMove(gs, ev.seat, { from: ev.from, to: ev.to });
+          if (ev.promotedTo && ev.promotedFromSquare !== undefined) {
+            applyGamePromotion(gs, ev.seat, ev.promotedFromSquare);
+          }
+        } else {
+          applyGameDrop(gs, ev.seat, { piece: ev.piece, to: ev.to });
+        }
+      } catch {}
+    }
+    return gs;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewPos, store.events.length, ownEventIndices, game?.code, game?.initialClockMs]);
+
+  // Arrow key navigation through own-board moves.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (ownEventIndices.length === 0) return;
+      e.preventDefault();
+      if (e.key === 'ArrowLeft') {
+        setReviewPos((prev) => {
+          if (prev === null) return ownEventIndices.length - 1;
+          return Math.max(0, prev - 1);
+        });
+      } else {
+        setReviewPos((prev) => {
+          if (prev === null) return null;
+          if (prev >= ownEventIndices.length - 1) return null;
+          return prev + 1;
+        });
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [ownEventIndices.length]);
+
+  // The seq of the currently highlighted event in the notation panel.
+  const highlightedSeq: number | null = (() => {
+    if (reviewPos === null) return null;
+    const globalIdx = ownEventIndices[reviewPos];
+    if (globalIdx === undefined) return null;
+    return store.events[globalIdx]?.seq ?? null;
+  })();
+
+  // Board/hand state to render — live game or historical replay.
+  const displayGame = reviewPos !== null && viewGame !== null ? viewGame : game;
 
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
   const [draggedHandPiece, setDraggedHandPiece] = useState<DropPieceType | null>(null);
@@ -585,6 +673,10 @@ export function GameView({ store, send, onHome }: Props) {
     send({ type: 'rematch' });
   }, [send]);
 
+  const handleNewSeating = useCallback(() => {
+    send({ type: 'new-seating' });
+  }, [send]);
+
   const handleSendChat = useCallback((text: string) => {
     send({ type: 'chat', text });
   }, [send]);
@@ -610,6 +702,7 @@ export function GameView({ store, send, onHome }: Props) {
 
   function buildBoardInteraction(boardId: BoardId): BoardInteraction | null {
     if (!game || yourSeat === null) return null;
+    if (reviewPos !== null) return null; // no interaction in review mode
     if (game.status !== 'playing') return null;
 
     if (inPromoMode && boardId === myBoardId) return null;
@@ -677,7 +770,7 @@ export function GameView({ store, send, onHome }: Props) {
   }
 
   function buildBoardEl(boardId: BoardId, cellSize: number, large = false) {
-    const board = game!.boards[boardId];
+    const board = displayGame!.boards[boardId];
     const perspective = boardPerspective(boardId);
 
     const topColor: Color = perspective === 'w' ? 'b' : 'w';
@@ -685,7 +778,7 @@ export function GameView({ store, send, onHome }: Props) {
     const botSeat: Seat = boardId === 0 ? (perspective === 'w' ? 0 : 1) : (perspective === 'w' ? 3 : 2);
 
     const interaction = buildBoardInteraction(boardId);
-    const pendingPromoSq = board.pendingPromotion?.to ?? null;
+    const pendingPromoSq = reviewPos === null ? (board.pendingPromotion?.to ?? null) : null;
     const isMyBoard = yourSeat !== null && seatBoard(yourSeat) === boardId;
     const handSeat = isMyBoard ? yourSeat! : botSeat;
     const isMyHand = isMyBoard && yourSeat !== null;
@@ -701,7 +794,7 @@ export function GameView({ store, send, onHome }: Props) {
         <div style={{ ...stripStyle, borderRadius: 8 }}>
           <PlayerStrip seat={topSeat} store={store} isYou={yourSeat === topSeat} position="top" large={large} />
           <HandPanel
-            hand={game!.hands[topSeat]}
+            hand={displayGame!.hands[topSeat]}
             color={seatColor(topSeat)}
             selectedPiece={null}
             onSelect={() => {}}
@@ -718,9 +811,9 @@ export function GameView({ store, send, onHome }: Props) {
           perspective={perspective}
           interaction={interaction}
           pendingPromoSquare={pendingPromoSq}
-          promotionPickColor={inPromoMode && boardId === diagBoardId ? diagColor! : undefined}
-          premove={yourSeat !== null && seatBoard(yourSeat) === boardId ? premove : null}
-          onCancelPremove={yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
+          promotionPickColor={reviewPos === null && inPromoMode && boardId === diagBoardId ? diagColor! : undefined}
+          premove={reviewPos === null && yourSeat !== null && seatBoard(yourSeat) === boardId ? premove : null}
+          onCancelPremove={reviewPos === null && yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
           cellSize={cellSize}
           colorScheme={colorScheme}
           pieceSet={pieceSet}
@@ -730,12 +823,12 @@ export function GameView({ store, send, onHome }: Props) {
         {/* Bottom player card */}
         <div style={{ ...stripStyle, borderRadius: 8 }}>
           <HandPanel
-            hand={game!.hands[handSeat]}
+            hand={displayGame!.hands[handSeat]}
             color={seatColor(handSeat)}
-            selectedPiece={isMyHand ? selectedPiece : null}
-            onSelect={isMyHand ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
-            canInteract={isMyHand && isYourTurn(boardId) && !inPromoMode}
-            canDrag={isMyHand && game!.status === 'playing' && !inPromoMode}
+            selectedPiece={isMyHand && reviewPos === null ? selectedPiece : null}
+            onSelect={isMyHand && reviewPos === null ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
+            canInteract={isMyHand && reviewPos === null && isYourTurn(boardId) && !inPromoMode}
+            canDrag={isMyHand && reviewPos === null && game!.status === 'playing' && !inPromoMode}
             onDragStart={isMyHand ? handleHandDragStart : undefined}
             onDragEnd={isMyHand ? () => setDraggedHandPiece(null) : undefined}
             large={large}
@@ -748,9 +841,6 @@ export function GameView({ store, send, onHome }: Props) {
       </div>
     );
   }
-
-  const ownBoardId: BoardId = myBoardId ?? 0;
-  const partnerBoardId: BoardId = (1 - ownBoardId) as BoardId;
 
   const isEnded = game.status === 'ended' && game.result;
   const isWin = isEnded && yourSeat !== null && yourSeat % 2 === game.result!.winningTeam;
@@ -825,6 +915,77 @@ export function GameView({ store, send, onHome }: Props) {
             height={Math.max(300, Math.min(480, Math.round(cellSize * 5.5)))}
           />
 
+          <NotationPanel
+            events={store.events}
+            ownBoardId={ownBoardId}
+            initialClockMs={game.initialClockMs}
+            highlightedSeq={highlightedSeq}
+            height={Math.max(180, Math.min(320, Math.round(cellSize * 2.8)))}
+          />
+
+          {/* Review mode indicator */}
+          {reviewPos !== null && (
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '6px 10px',
+              background: 'rgba(86,219,211,0.08)',
+              border: '1px solid rgba(86,219,211,0.2)',
+              borderRadius: 8,
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 11, color: '#56dbd3',
+              letterSpacing: 0.5,
+            }}>
+              <span>Move {reviewPos + 1}/{ownEventIndices.length} — ← → to navigate</span>
+              <button
+                onClick={() => setReviewPos(null)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#56dbd3', fontSize: 11, fontFamily: 'inherit',
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                  letterSpacing: 0.5,
+                }}
+              >
+                LIVE
+              </button>
+            </div>
+          )}
+
+          {/* Match score — shown once at least one game in the series is done */}
+          {(game.seriesScore[0] > 0 || game.seriesScore[1] > 0) && (() => {
+            const myTeam = yourSeat !== null ? (yourSeat % 2 as 0 | 1) : null;
+            const myScore  = myTeam !== null ? game.seriesScore[myTeam] : game.seriesScore[0];
+            const oppScore = myTeam !== null ? game.seriesScore[1 - myTeam as 0 | 1] : game.seriesScore[1];
+            return (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+                padding: '8px 12px',
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: 8,
+              }}>
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 10, color: 'rgba(255,255,255,0.35)',
+                  letterSpacing: 1, textTransform: 'uppercase',
+                }}>Match</span>
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 18, fontWeight: 700,
+                  color: myScore > oppScore ? '#34d399' : myScore < oppScore ? '#ff7070' : 'rgba(255,255,255,0.8)',
+                  letterSpacing: 2,
+                }}>
+                  {myScore}<span style={{ color: 'rgba(255,255,255,0.3)', margin: '0 4px' }}>–</span>{oppScore}
+                </span>
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 10, color: 'rgba(255,255,255,0.35)',
+                  letterSpacing: 1, textTransform: 'uppercase',
+                }}>{myTeam !== null ? 'You – Opp' : 'A – B'}</span>
+              </div>
+            );
+          })()}
+
           {/* Result + rematch */}
           {isEnded && (
             <div style={{
@@ -880,6 +1041,23 @@ export function GameView({ store, send, onHome }: Props) {
                   }}>
                     {([0, 1, 2, 3] as const).filter((s) => game.rematchVotes[s]).length}/4 ready
                   </div>
+                  <button
+                    onClick={handleNewSeating}
+                    style={{
+                      display: 'block', width: '100%',
+                      marginTop: 10,
+                      padding: '8px 0',
+                      background: 'transparent',
+                      color: 'rgba(255,255,255,0.7)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      borderRadius: 7,
+                      cursor: 'pointer',
+                      fontFamily: "'Geist', 'Inter', sans-serif",
+                      fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    New seating
+                  </button>
                 </>
               )}
             </div>

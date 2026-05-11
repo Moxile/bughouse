@@ -54,6 +54,7 @@ export function createGameState(code: string, now: number, initialClockMs = INIT
     startedAt: null,
     initialClockMs,
     rematchVotes: { 0: false, 1: false, 2: false, 3: false },
+    seriesScore: [0, 0],
   };
 }
 

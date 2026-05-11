@@ -1,18 +1,24 @@
 import { WebSocket } from 'ws';
 import {
   ClientMessage,
+  GameEvent,
+  GameEventDrop,
+  GameEventMove,
   GameState,
   S_Chat,
   S_Error,
   S_State,
   S_Welcome,
+  SavedGameRecord,
   Seat,
   SEATS,
   ServerMessage,
   createGameState,
   partnerOf,
+  seatBoard,
   teamOf,
 } from '@bughouse/shared';
+import { GameStore } from '../storage/SqliteGameStore.js';
 import { LobbyManager, Room } from '../game/LobbyManager.js';
 import { ClockManager } from '../game/ClockManager.js';
 import {
@@ -46,7 +52,7 @@ export class ConnectionManager {
   // Map from room.code -> ClockManager.
   private clocks = new Map<string, ClockManager>();
 
-  constructor() {
+  constructor(private readonly store: GameStore | null = null) {
     setInterval(() => this.pruneRooms(), PRUNE_INTERVAL_MS);
   }
 
@@ -96,6 +102,7 @@ export class ConnectionManager {
     switch (msg.type) {
       case 'join': return this.handleJoin(cs, msg);
       case 'claim-seat': return this.handleClaimSeat(cs, msg);
+      case 'release-seat': return this.handleReleaseSeat(cs);
       case 'ready': return this.handleReady(cs);
       case 'unready': return this.handleUnready(cs);
       case 'move': return this.handleMove(cs, msg);
@@ -105,6 +112,7 @@ export class ConnectionManager {
       case 'resign': return this.handleResign(cs);
       case 'chat': return this.handleChat(cs, msg);
       case 'rematch': return this.handleRematch(cs);
+      case 'new-seating': return this.handleNewSeating(cs);
       case 'set-time-control': return this.handleSetTimeControl(cs, msg);
     }
   }
@@ -153,6 +161,20 @@ export class ConnectionManager {
       return;
     }
     cs.seat = msg.seat;
+    this.broadcastState(cs.room);
+  }
+
+  private handleReleaseSeat(cs: ClientState): void {
+    if (!cs.room || cs.seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (cs.room.game.status !== 'lobby') {
+      this.send(cs.ws, { type: 'error', reason: 'game-in-progress' });
+      return;
+    }
+    cs.room.slots.delete(cs.seat);
+    cs.seat = null;
     this.broadcastState(cs.room);
   }
 
@@ -206,6 +228,48 @@ export class ConnectionManager {
     this.broadcastState(room);
   }
 
+  // Append an event to the room's in-memory journal, assigning it the next
+  // 1-based seq. Overloads keep per-kind field-narrowing at call sites.
+  private appendEvent(room: Room, ev: Omit<GameEventMove, 'seq'>): void;
+  private appendEvent(room: Room, ev: Omit<GameEventDrop, 'seq'>): void;
+  private appendEvent(room: Room, ev: Omit<GameEvent, 'seq'>): void {
+    room.events.push({ ...ev, seq: room.events.length + 1 } as GameEvent);
+  }
+
+  // Persist a finished game if it meets the bar. Called from every end path
+  // (mate / king-capture inside a move, resign, flag, disconnect). Bumps the
+  // room's seriesIndex only when a save actually happens — so series numbering
+  // stays dense across drop-outs.
+  private finalizeGame(room: Room, endedAt: number): void {
+    if (!this.store) return;
+    if (!shouldPersist(room)) return;
+    if (!room.game.startedAt || !room.game.result) return;
+
+    const nextIndex = room.seriesIndex + 1;
+    const record: SavedGameRecord = {
+      gameId: randomUUID(),
+      seriesId: room.seriesId,
+      seriesIndex: nextIndex,
+      code: room.code,
+      startedAt: room.game.startedAt,
+      endedAt,
+      initialClockMs: room.game.initialClockMs,
+      result: room.game.result,
+      playerNames: snapshotPlayerNames(room),
+      events: [...room.events],
+    };
+    try {
+      this.store.saveGame(record);
+      room.seriesIndex = nextIndex;
+      console.log(
+        `[store] saved game ${record.gameId} (room ${room.code}, ` +
+        `series ${room.seriesId.slice(0, 8)} #${nextIndex}, ${record.events.length} events)`,
+      );
+    } catch (e) {
+      console.error(`[store] failed to save game for room ${room.code}:`, e);
+    }
+  }
+
   private handleMove(cs: ClientState, msg: { boardId: number; from: number; to: number }): void {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
@@ -215,8 +279,22 @@ export class ConnectionManager {
       const out = applyGameMove(room.game, seat, { from: msg.from, to: msg.to });
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
+      // Defer logging if this move triggered a promotion: the event will be
+      // written atomically when the player picks the promoted piece.
+      if (!out.triggeredPromotion) {
+        this.appendEvent(room, {
+          kind: 'move',
+          ts: now,
+          boardId: seatBoard(seat),
+          seat,
+          from: msg.from,
+          to: msg.to,
+        });
+      }
       if (room.game.status === 'ended') {
         cm.stopAll();
+        this.recordScore(room);
+        this.finalizeGame(room, now);
       }
       this.broadcastState(room);
     } catch (e) {
@@ -234,6 +312,14 @@ export class ConnectionManager {
       applyGameDrop(room.game, seat, { piece: msg.piece as any, to: msg.to });
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
+      this.appendEvent(room, {
+        kind: 'drop',
+        ts: now,
+        boardId: seatBoard(seat),
+        seat,
+        piece: msg.piece as any,
+        to: msg.to,
+      });
       this.broadcastState(room);
     } catch (e) {
       const reason = e instanceof DropError ? e.reason : 'illegal-drop';
@@ -246,12 +332,32 @@ export class ConnectionManager {
     const room = cs.room!;
     const seat = cs.seat!;
     const now = Date.now();
+    // Capture the originating pawn move before applying — `applyGamePromotion`
+    // clears `pendingPromotion`, so we can't read it afterwards.
+    const boardId = seatBoard(seat);
+    const pending = room.game.boards[boardId].pendingPromotion;
     try {
-      applyGamePromotion(room.game, seat, msg.diagonalSquare);
+      const out = applyGamePromotion(room.game, seat, msg.diagonalSquare);
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
+      // Atomic move-with-promotion event. `pending` is guaranteed to be set
+      // here because applyGamePromotion would have thrown otherwise.
+      if (pending) {
+        this.appendEvent(room, {
+          kind: 'move',
+          ts: now,
+          boardId,
+          seat,
+          from: pending.from,
+          to: pending.to,
+          promotedTo: out.takenType,
+          promotedFromSquare: msg.diagonalSquare,
+        });
+      }
       if (room.game.status === 'ended') {
         cm.stopAll();
+        this.recordScore(room);
+        this.finalizeGame(room, now);
       }
       this.broadcastState(room);
     } catch (e) {
@@ -277,6 +383,7 @@ export class ConnectionManager {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
     const seat = cs.seat!;
+    const now = Date.now();
     room.game.status = 'ended';
     room.game.result = {
       winningTeam: (teamOf(seat) === 0 ? 1 : 0) as 0 | 1,
@@ -284,6 +391,8 @@ export class ConnectionManager {
       losingSeat: seat,
     };
     this.clocks.get(room.code)?.stopAll();
+    this.recordScore(room);
+    this.finalizeGame(room, now);
     this.broadcastState(room);
   }
 
@@ -303,6 +412,34 @@ export class ConnectionManager {
     } else {
       this.broadcastState(room);
     }
+  }
+
+  // Drop the room back to the seating lobby. Unilateral: any seated player
+  // triggers this for everyone in the room (including spectators). Seats are
+  // preserved so partners who don't want to swap just hit Ready again; anyone
+  // who does want to move can release their seat from the lobby UI.
+  private handleNewSeating(cs: ClientState): void {
+    if (!cs.room || cs.seat === null) return;
+    const room = cs.room;
+    if (room.game.status !== 'ended') return;
+
+    // Stop any clock activity from the just-finished game.
+    this.clocks.get(room.code)?.stopAll();
+    this.clocks.delete(room.code);
+
+    // Fresh game state, but stay in the lobby. Preserve the previously
+    // configured time control so players don't have to re-set it.
+    const prevClockMs = room.game.initialClockMs;
+    room.game = createGameState(room.code, Date.now(), prevClockMs);
+    room.events = [];
+
+    // Keep all existing seat assignments (names, playerIds, connected status)
+    // but mark everyone unready for the next game.
+    for (const slot of room.slots.values()) {
+      slot.ready = false;
+    }
+
+    this.broadcastState(room);
   }
 
   private startRematch(room: Room): void {
@@ -325,11 +462,16 @@ export class ConnectionManager {
       }
     }
 
+    // Preserve series score across rematches.
+    const prevScore: [number, number] = [room.game.seriesScore[0], room.game.seriesScore[1]];
+
     // Replace game state with a fresh game, started immediately.
     room.game = createGameState(room.code, now);
+    room.game.seriesScore = prevScore;
     room.game.status = 'playing';
     room.game.startedAt = now;
     room.game.lastClockUpdate = [now, now];
+    room.events = [];
 
     // Reset clock manager.
     this.clocks.get(room.code)?.stopAll();
@@ -360,6 +502,7 @@ export class ConnectionManager {
 
   private handleFlag(room: Room, seat: Seat): void {
     if (room.game.status !== 'playing') return;
+    const now = Date.now();
     room.game.status = 'ended';
     room.game.result = {
       winningTeam: (teamOf(seat) === 0 ? 1 : 0) as 0 | 1,
@@ -367,7 +510,14 @@ export class ConnectionManager {
       losingSeat: seat,
     };
     this.clocks.get(room.code)?.stopAll();
+    this.recordScore(room);
+    this.finalizeGame(room, now);
     this.broadcastState(room);
+  }
+
+  private recordScore(room: Room): void {
+    if (!room.game.result) return;
+    room.game.seriesScore[room.game.result.winningTeam]++;
   }
 
   private handleDisconnect(cs: ClientState): void {
@@ -380,6 +530,7 @@ export class ConnectionManager {
       this.lobby.handleDisconnect(room, seat, (r, s) => {
         // 30s timeout: forfeit.
         if (r.game.status !== 'playing') return;
+        const now = Date.now();
         r.game.status = 'ended';
         r.game.result = {
           winningTeam: (teamOf(s) === 0 ? 1 : 0) as 0 | 1,
@@ -387,6 +538,8 @@ export class ConnectionManager {
           losingSeat: s,
         };
         this.clocks.get(r.code)?.stopAll();
+        this.recordScore(r);
+        this.finalizeGame(r, now);
         this.broadcastState(r);
       });
     } else if (room.game.status === 'lobby') {
@@ -430,6 +583,7 @@ export class ConnectionManager {
         2: room.slots.get(2)?.connected ?? false,
         3: room.slots.get(3)?.connected ?? false,
       },
+      events: room.events,
     };
     // Send personalised copy to each client.
     for (const [ws, cs] of this.clients) {
@@ -453,4 +607,30 @@ export class ConnectionManager {
       ws.send(JSON.stringify(msg));
     }
   }
+}
+
+// Filter for which finished games are worth keeping. Tunable as the product
+// matures; current rules: at least 10 logged actions and at least one on each
+// board (rules out cases where one team never moved).
+function shouldPersist(room: Room): boolean {
+  if (room.events.length < 10) return false;
+  let hasB0 = false, hasB1 = false;
+  for (const e of room.events) {
+    if (e.boardId === 0) hasB0 = true;
+    else if (e.boardId === 1) hasB1 = true;
+    if (hasB0 && hasB1) return true;
+  }
+  return false;
+}
+
+// Snapshot whatever names sit in the room's slots right now. Stored on the
+// SavedGameRecord so post-game roster shuffles (release-seat / new-seating
+// substitutes) don't rewrite history.
+function snapshotPlayerNames(room: Room): Record<Seat, string> {
+  return {
+    0: room.slots.get(0)?.name ?? '?',
+    1: room.slots.get(1)?.name ?? '?',
+    2: room.slots.get(2)?.name ?? '?',
+    3: room.slots.get(3)?.name ?? '?',
+  };
 }

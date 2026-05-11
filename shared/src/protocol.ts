@@ -1,5 +1,6 @@
 // WebSocket message types shared between server and client.
 import { BoardId, DropPieceType, GameState, Seat, Square } from './types.js';
+import { GameEvent } from './events.js';
 
 // ---------- Client → Server ----------
 
@@ -14,6 +15,12 @@ export type C_Join = {
 export type C_ClaimSeat = {
   type: 'claim-seat';
   seat: Seat;
+};
+
+// Release the sender's currently held seat back into the lobby pool. Only
+// valid while the room is in 'lobby' status.
+export type C_ReleaseSeat = {
+  type: 'release-seat';
 };
 
 export type C_Ready = {
@@ -61,6 +68,13 @@ export type C_Rematch = {
   type: 'rematch';
 };
 
+// Sent from the end-of-game screen to drop the room back to the seating
+// lobby. Unilateral: any seated player triggers it for everyone (including
+// spectators), so a substitute can take a seat for the next game.
+export type C_NewSeating = {
+  type: 'new-seating';
+};
+
 export type C_SetTimeControl = {
   type: 'set-time-control';
   // Minutes per player (1–5).
@@ -70,6 +84,7 @@ export type C_SetTimeControl = {
 export type ClientMessage =
   | C_Join
   | C_ClaimSeat
+  | C_ReleaseSeat
   | C_Ready
   | C_Unready
   | C_Move
@@ -79,6 +94,7 @@ export type ClientMessage =
   | C_Resign
   | C_Chat
   | C_Rematch
+  | C_NewSeating
   | C_SetTimeControl;
 
 // ---------- Server → Client ----------
@@ -95,6 +111,10 @@ export type S_State = {
   ready: Record<Seat, boolean>;
   // Map of seat -> connected flag.
   connected: Record<Seat, boolean>;
+  // Append-only journal of moves/drops in the CURRENT game. Empty in lobby
+  // and after a fresh reset; grows as the game progresses. Drives the
+  // notation panel and (later) replay.
+  events: GameEvent[];
 };
 
 export type S_Error = {

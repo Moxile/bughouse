@@ -1,4 +1,5 @@
-import { GameState, Seat, SEATS, teamOf } from '@bughouse/shared';
+import { GameEvent, GameState, Seat, SEATS, teamOf } from '@bughouse/shared';
+import { randomUUID } from 'node:crypto';
 import { createGameState } from '../engine/game.js';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -21,6 +22,17 @@ export type Room = {
   // All WebSocket connections in this room (seat or spectator).
   clients: Set<RoomClient>;
   createdAt: number;
+  // Append-only journal of state-changing actions for the CURRENT game.
+  // Reset to [] on every fresh game (rematch, new-seating, room creation).
+  // Server-only: never broadcast to clients.
+  events: GameEvent[];
+
+  // All games played in this room (across rematches and new-seating) share
+  // a seriesId. seriesIndex is a *dense* counter over saved games — it only
+  // increments when a game actually passes shouldPersist() and lands in the
+  // database, so users see "Game 1, 2, 3" rather than gappy numbering.
+  seriesId: string;
+  seriesIndex: number;
 };
 
 export type RoomClient = {
@@ -47,6 +59,9 @@ export class LobbyManager {
       slots: new Map(),
       clients: new Set(),
       createdAt: now,
+      events: [],
+      seriesId: randomUUID(),
+      seriesIndex: 0,
     };
     this.rooms.set(code, room);
     return room;

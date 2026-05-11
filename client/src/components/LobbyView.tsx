@@ -30,6 +30,10 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
     send({ type: 'claim-seat', seat });
   };
 
+  const handleReleaseSeat = () => {
+    send({ type: 'release-seat' });
+  };
+
   const handleReady = () => {
     send({ type: 'ready' });
   };
@@ -219,16 +223,30 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
                         letterSpacing: 0.5,
                       }}>✓ READY</span>
                     ) : isMine ? (
-                      <button
-                        onClick={handleReady}
-                        style={{
-                          padding: '4px 12px',
-                          background: '#34d399', color: '#0a0a0a',
-                          border: 'none', borderRadius: 5,
-                          cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                          fontFamily: "'Geist', 'Inter', sans-serif",
-                        }}
-                      >Ready</button>
+                      <>
+                        <button
+                          onClick={handleReady}
+                          style={{
+                            padding: '4px 12px',
+                            background: '#34d399', color: '#0a0a0a',
+                            border: 'none', borderRadius: 5,
+                            cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                            fontFamily: "'Geist', 'Inter', sans-serif",
+                          }}
+                        >Ready</button>
+                        <button
+                          onClick={handleReleaseSeat}
+                          style={{
+                            padding: '4px 10px',
+                            background: 'transparent',
+                            color: 'rgba(255,255,255,0.5)',
+                            border: '1px solid rgba(255,255,255,0.15)',
+                            borderRadius: 5,
+                            cursor: 'pointer', fontSize: 11, fontWeight: 600,
+                            fontFamily: "'Geist', 'Inter', sans-serif",
+                          }}
+                        >Leave seat</button>
+                      </>
                     ) : null}
                   </div>
                 ) : (
