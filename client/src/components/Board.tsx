@@ -42,6 +42,7 @@ type Props = {
   colorScheme?: ColorScheme;
   pieceSet?: PieceSet;
   lastMove?: { from: Square; to: Square } | null;
+  onHotkeyDrop?: (piece: DropPieceType, to: Square) => void;
 };
 
 const DRAG_PX = 5;
@@ -59,14 +60,23 @@ export function Board({
   colorScheme = DEFAULT_SCHEME,
   pieceSet = DEFAULT_PIECE_SET,
   lastMove,
+  onHotkeyDrop,
 }: Props) {
   const cs = colorScheme;
   const [selected, setSelected] = useState<Square | null>(null);
+  const [hoverSquare, setHoverSquare] = useState<Square | null>(null);
   const [drag, setDrag] = useState<{
     src: Square;
     x: number;
     y: number;
     hover: Square | null;
+  } | null>(null);
+  const [releaseAnim, setReleaseAnim] = useState<{
+    piece: NonNullable<typeof board[number]>;
+    from: Square;
+    to: Square;
+    startX: number;
+    startY: number;
   } | null>(null);
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -77,6 +87,29 @@ export function Board({
     document.body.style.cursor = 'grabbing';
     return () => { document.body.style.cursor = ''; };
   }, [isDragging]);
+
+  useEffect(() => {
+    const pieceMap: Record<string, DropPieceType> = {
+      '1': 'P', '2': 'N', '3': 'B', '4': 'R', '5': 'Q',
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!hoverSquare) return;
+      const piece = pieceMap[e.key];
+      if (!piece) return;
+
+      if (onHotkeyDrop) {
+        e.preventDefault();
+        onHotkeyDrop(piece, hoverSquare);
+      } else if (interaction?.mode === 'drop' && interaction.dropTargets.has(hoverSquare)) {
+        e.preventDefault();
+        interaction.onDrop(hoverSquare);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [hoverSquare, interaction, onHotkeyDrop]);
 
   const sqFromClient = useCallback((cx: number, cy: number): Square | null => {
     const g = gridRef.current;
@@ -89,6 +122,24 @@ export function Board({
     const r = perspective === 'w' ? 7 - Math.floor(ri) : Math.floor(ri);
     return r * 8 + f;
   }, [cellSize, perspective]);
+
+  const clientFromSq = useCallback((s: Square) => {
+  const g = gridRef.current;
+  if (!g) return null;
+
+  const rect = g.getBoundingClientRect();
+
+  const f = fileOf(s);
+  const r = rankOf(s);
+
+  const displayF = perspective === 'w' ? f : 7 - f;
+  const displayR = perspective === 'w' ? 7 - r : r;
+
+  return {
+    x: rect.left + displayF * cellSize + cellSize / 2,
+    y: rect.top + displayR * cellSize + cellSize / 2,
+  };
+}, [cellSize, perspective]);
 
   // Show targets from the dragged piece or from the click-selected piece
   const targetSrc = drag?.src ?? selected;
@@ -154,9 +205,25 @@ export function Board({
           const onPUp = (ue: PointerEvent) => {
             document.removeEventListener('pointermove', onPMove);
             if (dragging) {
-              setDrag(null);
               const toSq = sqFromClient(ue.clientX, ue.clientY);
-              if (toSq !== null && targets.has(toSq)) onMovePiece(s, toSq);
+
+              if (toSq !== null && targets.has(toSq)) {
+                const piece = board[s];
+
+                if (piece) {
+                  setReleaseAnim({
+                    piece,
+                    from: s,
+                    to: toSq,
+                    startX: ue.clientX,
+                    startY: ue.clientY,
+                  });
+                }
+
+                onMove(s, toSq);
+              }
+
+              setDrag(null);
               setSelected(null);
             }
             // else: piece stays selected for a follow-up click
@@ -270,6 +337,11 @@ export function Board({
       )}
       <div
         ref={gridRef}
+        onPointerMove={(e) => {
+        setHoverSquare(
+            sqFromClient(e.clientX, e.clientY)
+          );
+        }}
         style={{
           display: 'grid',
           gridTemplateColumns: `repeat(8, ${cellSize}px)`,
@@ -394,7 +466,11 @@ export function Board({
                   <div style={{
                     position: 'relative', zIndex: 3,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    opacity: isDragSrc ? 0.25 : 1,
+                    opacity:
+                      isDragSrc ||
+                      (releaseAnim && releaseAnim.from === s)
+                        ? 0.25
+                        : 1,
                     pointerEvents: 'none',
                     cursor: drag ? 'grabbing' : (interaction?.mode === 'move' ? 'grab' : 'pointer'),
                   }}>
@@ -411,6 +487,7 @@ export function Board({
           })
         )}
       </div>
+      
 
       {/* Floating piece that follows the cursor during drag */}
       {draggingPiece && drag && (
@@ -433,7 +510,36 @@ export function Board({
             pieceSet={pieceSet}
           />
         </div>
+
       )}
+      {releaseAnim && clientFromSq(releaseAnim.to) && (
+  <div
+    style={{
+      position: 'fixed',
+      left: 0,
+      top: 0,
+      width: pieceSize * 1.2,
+      height: pieceSize * 1.2,
+      pointerEvents: 'none',
+      zIndex: 1000,
+      transform: `translate(
+        ${clientFromSq(releaseAnim.to)!.x - (pieceSize * 1.2) / 2}px,
+        ${clientFromSq(releaseAnim.to)!.y - (pieceSize * 1.2) / 2}px
+      )`,
+      transition: 'transform 90ms ease-out',
+    }}
+    onTransitionEnd={() => {
+      setReleaseAnim(null);
+    }}
+  >
+    <ChessPiece
+      piece={releaseAnim.piece.type as PieceType}
+      color={releaseAnim.piece.color}
+      size={Math.round(pieceSize * 1.2)}
+      pieceSet={pieceSet}
+    />
+  </div>
+)}
     </div>
   );
 }

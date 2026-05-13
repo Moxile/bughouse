@@ -783,6 +783,24 @@ export function GameView({ store, send, onHome }: Props) {
     const handSeat = isMyBoard ? yourSeat! : botSeat;
     const isMyHand = isMyBoard && yourSeat !== null;
 
+    const hotkeyDrop = isMyBoard && yourSeat !== null && reviewPos === null && game!.status === 'playing' && !inPromoMode
+      ? (piece: DropPieceType, to: Square) => {
+          const hand = game!.hands[yourSeat!];
+          if (!hand[piece] || hand[piece] <= 0) return;
+          if (isYourTurn(boardId)) {
+            const targets = getDropTargets(boardId, piece);
+            if (!targets.has(to)) return;
+            send({ type: 'drop', boardId, piece, to });
+            setSelectedPiece(null);
+          } else {
+            const targets = getPremoveDropTargets(piece);
+            if (!targets.has(to)) return;
+            setPremove({ type: 'drop', piece, to });
+            setSelectedPiece(null);
+          }
+        }
+      : undefined;
+
     const stripStyle = {
       background: 'rgba(255,255,255,0.025)',
       border: '1px solid rgba(255,255,255,0.07)',
@@ -818,6 +836,7 @@ export function GameView({ store, send, onHome }: Props) {
           colorScheme={colorScheme}
           pieceSet={pieceSet}
           lastMove={board.lastMove}
+          onHotkeyDrop={hotkeyDrop}
         />
 
         {/* Bottom player card */}
