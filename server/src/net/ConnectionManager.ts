@@ -492,11 +492,12 @@ export class ConnectionManager {
       }
     }
 
-    // Preserve series score across rematches.
+    // Preserve series score and time control across rematches.
     const prevScore: [number, number] = [room.game.seriesScore[0], room.game.seriesScore[1]];
+    const prevClockMs = room.game.initialClockMs;
 
     // Replace game state with a fresh game, started immediately.
-    room.game = createGameState(room.code, now);
+    room.game = createGameState(room.code, now, prevClockMs);
     room.game.seriesScore = prevScore;
     room.game.status = 'playing';
     room.game.startedAt = now;
