@@ -471,18 +471,42 @@ export function getValidPromotionSquares(diagBoard: BoardState, diagColor: Color
   return valid;
 }
 
-// Returns true if removing the piece at `square` from `diagBoard` would leave
-// that piece's king exposed to immediate capture (i.e., the piece is pinned).
+// Returns true if removing the piece at `square` from `diagBoard` would newly
+// expose either king to capture. Two cases:
+//   1. diagColor's king exposed to oppColor (classic pin — diagColor piece was
+//      shielding diagColor king from an oppColor attacker).
+//   2. oppColor's king exposed to diagColor (diagColor piece was acting as a
+//      blocker in a diagColor battery aimed at the oppColor king, e.g. a
+//      diagColor knight sitting between a diagColor bishop and the oppColor
+//      king). If it's diagColor's turn they can immediately capture.
+// In both cases, if the relevant king is already in check before removal the
+// situation is no worse, so we don't additionally block the piece.
 function wouldExposeKingAfterRemoval(diagBoard: BoardState, square: Square): boolean {
   const piece = diagBoard.board[square];
   if (!piece) return false;
-  const kingColor = piece.color;
-  const oppColor: Color = kingColor === 'w' ? 'b' : 'w';
+  const diagColor = piece.color;
+  const oppColor: Color = diagColor === 'w' ? 'b' : 'w';
+
   const test = diagBoard.board.slice() as BoardState['board'];
   test[square] = null;
-  const kingSquare = findKingIn(test, kingColor);
-  if (kingSquare === null) return false;
-  return isSquareAttackedInline(test, kingSquare, oppColor);
+
+  // Case 1: diagColor's own king newly exposed to oppColor attacks.
+  const diagKing = findKingIn(diagBoard.board, diagColor);
+  if (diagKing !== null
+    && !isSquareAttackedInline(diagBoard.board, diagKing, oppColor)
+    && isSquareAttackedInline(test, diagKing, oppColor)) {
+    return true;
+  }
+
+  // Case 2: oppColor's king newly exposed to diagColor attacks.
+  const oppKing = findKingIn(diagBoard.board, oppColor);
+  if (oppKing !== null
+    && !isSquareAttackedInline(diagBoard.board, oppKing, diagColor)
+    && isSquareAttackedInline(test, oppKing, diagColor)) {
+    return true;
+  }
+
+  return false;
 }
 
 // ---------------- Errors / helpers ----------------
