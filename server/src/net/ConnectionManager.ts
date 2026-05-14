@@ -564,10 +564,19 @@ export class ConnectionManager {
   private handleDisconnect(cs: ClientState): void {
     const { room, seat } = cs;
     if (!room || seat === null) return;
-    room.clients.forEach((c) => {
-      if (c.playerId === cs.playerId) room.clients.delete(c);
-    });
+    // this.clients still contains cs at this point (deleted after handleDisconnect returns).
+    // If another WebSocket for the same player is already alive (stale close event from
+    // a previous connection firing after a successful reconnect), skip the forfeit timer.
+    const stillConnected = [...this.clients.values()].some(
+      (other) => other !== cs && other.playerId === cs.playerId && other.room === room,
+    );
+    if (!stillConnected) {
+      room.clients.forEach((c) => {
+        if (c.playerId === cs.playerId) room.clients.delete(c);
+      });
+    }
     if (room.game.status === 'playing') {
+      if (stillConnected) return;
       this.lobby.handleDisconnect(room, seat, (r, s) => {
         // 30s timeout: forfeit.
         if (r.game.status !== 'playing') return;
