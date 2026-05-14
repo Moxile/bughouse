@@ -33,6 +33,9 @@ export type Room = {
   // database, so users see "Game 1, 2, 3" rather than gappy numbering.
   seriesId: string;
   seriesIndex: number;
+  // Hidden from the public games list when true. Persists across rematches
+  // and new-seating since it lives on the Room, not the GameState.
+  isPrivate: boolean;
 };
 
 export type RoomClient = {
@@ -62,6 +65,7 @@ export class LobbyManager {
       events: [],
       seriesId: randomUUID(),
       seriesIndex: 0,
+      isPrivate: false,
     };
     this.rooms.set(code, room);
     return room;

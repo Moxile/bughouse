@@ -110,7 +110,7 @@ export function applyGameMove(
   gs.boards[boardId] = result.state;
 
   let capturedToPartnerHand: DropPieceType | null = null;
-  if (result.captured) {
+  if (result.captured && !result.triggeredPromotion) {
     const partner = partnerOf(seat);
     // Kings don't go to hand. Promoted pieces revert to pawns when captured.
     if (result.captured.type !== 'K') {
@@ -394,6 +394,14 @@ export function applyGamePromotion(
   gs.boards[diagBoardId] = diagAfter;
   gs.boards[boardId] = promotedAfter;
 
+  // Credit the piece captured during the promotion-triggering move to the partner's hand.
+  const { capturedAtTo } = board.pendingPromotion!;
+  if (capturedAtTo && capturedAtTo.type !== 'K') {
+    const partner = partnerOf(seat);
+    const handed = capturedAtTo.type as DropPieceType;
+    gs.hands[partner][handed] += 1;
+  }
+
   // Add a pawn to the diagonal opponent's hand.
   gs.hands[diagSeat].P += 1;
 
@@ -424,16 +432,7 @@ export function cancelGamePromotion(gs: GameState, seat: Seat): void {
   if (!board.pendingPromotion) throw new PromotionFlowError('no-pending');
   if (board.pendingPromotion.color !== color) throw new PromotionFlowError('wrong-color');
 
-  const { capturedAtTo } = board.pendingPromotion;
   gs.boards[boardId] = cancelPromotion(board);
-
-  // If the promotion-triggering move captured a piece, that piece was credited
-  // to the partner's hand by applyGameMove — remove it now.
-  if (capturedAtTo && capturedAtTo.type !== 'K') {
-    const partner = partnerOf(seat);
-    const handed = capturedAtTo.type as DropPieceType;
-    gs.hands[partner][handed] = Math.max(0, gs.hands[partner][handed] - 1);
-  }
 }
 
 // True if the given seat's pawn can legally promote at all (i.e., the

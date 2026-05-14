@@ -81,11 +81,17 @@ export function validateClientMessage(raw: unknown): ClientMessage | null {
       return { type: 'chat', text };
     }
     case 'rematch': return { type: 'rematch' };
+    case 'release-seat': return { type: 'release-seat' };
+    case 'new-seating': return { type: 'new-seating' };
     case 'set-time-control': {
       if (typeof m.minutes !== 'number' || !Number.isFinite(m.minutes)) return null;
       const minutes = Math.round(m.minutes);
       if (minutes < 1 || minutes > 5) return null;
       return { type: 'set-time-control', minutes };
+    }
+    case 'set-private': {
+      if (typeof m.isPrivate !== 'boolean') return null;
+      return { type: 'set-private', isPrivate: m.isPrivate };
     }
     default:
       return null;
@@ -171,6 +177,11 @@ export type C_SetTimeControl = {
   minutes: number;
 };
 
+export type C_SetPrivate = {
+  type: 'set-private';
+  isPrivate: boolean;
+};
+
 export type ClientMessage =
   | C_Join
   | C_ClaimSeat
@@ -185,7 +196,8 @@ export type ClientMessage =
   | C_Chat
   | C_Rematch
   | C_NewSeating
-  | C_SetTimeControl;
+  | C_SetTimeControl
+  | C_SetPrivate;
 
 // ---------- Server → Client ----------
 
@@ -205,6 +217,8 @@ export type S_State = {
   // and after a fresh reset; grows as the game progresses. Drives the
   // notation panel and (later) replay.
   events: GameEvent[];
+  // Whether the room is hidden from the public games list.
+  isPrivate: boolean;
 };
 
 export type S_Error = {

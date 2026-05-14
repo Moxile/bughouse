@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Seat, seatColor, seatBoard } from '@bughouse/shared';
 import { BughouseIcon } from './BughouseIcon';
 import type { GameStore } from '../hooks/useGame.js';
@@ -24,7 +24,8 @@ type Props = {
 };
 
 export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
-  const { yourSeat } = store;
+  const { yourSeat, isPrivate } = store;
+  const [copied, setCopied] = useState(false);
 
   const handleClaim = (seat: Seat) => {
     send({ type: 'claim-seat', seat });
@@ -48,7 +49,18 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
     send({ type: 'set-time-control', minutes });
   };
 
+  const handleSetPrivate = (isPrivate: boolean) => {
+    send({ type: 'set-private', isPrivate });
+  };
+
   const url = `${location.origin}/g/${code}`;
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   return (
     <div style={{
@@ -99,17 +111,18 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
               letterSpacing: 0.5,
             }}>{url}</span>
             <button
-              onClick={() => navigator.clipboard.writeText(url)}
+              onClick={handleCopy}
               style={{
                 padding: '5px 12px', fontSize: 11,
-                background: 'rgba(86,219,211,0.1)',
-                border: '1px solid rgba(86,219,211,0.25)',
+                background: copied ? 'rgba(86,219,211,0.18)' : 'rgba(86,219,211,0.1)',
+                border: `1px solid ${copied ? 'rgba(86,219,211,0.5)' : 'rgba(86,219,211,0.25)'}`,
                 borderRadius: 5, cursor: 'pointer',
                 color: '#56dbd3', fontWeight: 600,
                 fontFamily: "'Geist', 'Inter', sans-serif",
                 whiteSpace: 'nowrap',
+                transition: 'background 0.2s, border-color 0.2s',
               }}
-            >Copy</button>
+            >{copied ? '✓ Copied' : 'Copy'}</button>
           </div>
         </div>
 
@@ -163,6 +176,48 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
                 >{m}+0</button>
               );
             })}
+          </div>
+        </div>
+
+        {/* Private game toggle */}
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => yourSeat !== null && handleSetPrivate(!isPrivate)}
+            disabled={yourSeat === null}
+            style={{
+              position: 'relative',
+              width: 40, height: 22,
+              background: isPrivate ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)',
+              border: `1px solid ${isPrivate ? 'rgba(167,139,250,0.8)' : 'rgba(255,255,255,0.15)'}`,
+              borderRadius: 11,
+              cursor: yourSeat !== null ? 'pointer' : 'default',
+              padding: 0,
+              transition: 'background 200ms, border-color 200ms',
+              opacity: yourSeat === null ? 0.4 : 1,
+              flexShrink: 0,
+            }}
+            aria-label="Toggle private game"
+          >
+            <span style={{
+              position: 'absolute',
+              top: 2,
+              left: isPrivate ? 20 : 2,
+              width: 16, height: 16,
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 200ms',
+              display: 'block',
+            }} />
+          </button>
+          <div>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10, color: isPrivate ? 'rgba(167,139,250,0.9)' : 'rgba(255,255,255,0.35)',
+              letterSpacing: 1, textTransform: 'uppercase',
+              transition: 'color 200ms',
+            }}>
+              {isPrivate ? 'Private — hidden from lobby' : 'Public — visible in lobby'}
+            </div>
           </div>
         </div>
 

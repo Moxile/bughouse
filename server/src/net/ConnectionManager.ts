@@ -120,7 +120,7 @@ export class ConnectionManager {
 
   listRooms(): { code: string; status: string; players: (string | null)[] }[] {
     return this.lobby.allRooms()
-      .filter((r) => r.game.status !== 'ended')
+      .filter((r) => r.game.status !== 'ended' && !r.isPrivate)
       .map((r) => ({
         code: r.code,
         status: r.game.status,
@@ -144,6 +144,7 @@ export class ConnectionManager {
       case 'rematch': return this.handleRematch(cs);
       case 'new-seating': return this.handleNewSeating(cs);
       case 'set-time-control': return this.handleSetTimeControl(cs, msg);
+      case 'set-private': return this.handleSetPrivate(cs, msg);
     }
   }
 
@@ -228,6 +229,15 @@ export class ConnectionManager {
     }
     if (cs.room.game.status !== 'lobby') return;
     this.lobby.setUnready(cs.room, cs.seat);
+    this.broadcastState(cs.room);
+  }
+
+  private handleSetPrivate(cs: ClientState, msg: { isPrivate: boolean }): void {
+    if (!cs.room || cs.seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    cs.room.isPrivate = msg.isPrivate;
     this.broadcastState(cs.room);
   }
 
@@ -615,6 +625,7 @@ export class ConnectionManager {
         3: room.slots.get(3)?.connected ?? false,
       },
       events: room.events,
+      isPrivate: room.isPrivate,
     };
     // Send personalised copy to each client.
     for (const [ws, cs] of this.clients) {

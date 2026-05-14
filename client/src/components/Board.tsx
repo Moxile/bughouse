@@ -88,6 +88,23 @@ export function Board({
     return () => { document.body.style.cursor = ''; };
   }, [isDragging]);
 
+  // Cancel promotion if the user clicks anywhere outside the board
+  useEffect(() => {
+    if (interaction?.mode !== 'promotion-pick') return;
+    const { onCancel } = interaction;
+    const handler = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      const g = gridRef.current;
+      if (!g) return;
+      const rect = g.getBoundingClientRect();
+      const inBoard = e.clientX >= rect.left && e.clientX <= rect.right
+        && e.clientY >= rect.top && e.clientY <= rect.bottom;
+      if (!inBoard) onCancel?.();
+    };
+    document.addEventListener('pointerdown', handler);
+    return () => document.removeEventListener('pointerdown', handler);
+  }, [interaction]);
+
   useEffect(() => {
     const pieceMap: Record<string, DropPieceType> = {
       '1': 'P', '2': 'N', '3': 'B', '4': 'R', '5': 'Q',
