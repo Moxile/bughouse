@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { fetchLeaderboard } from '../lib/auth.js';
 import { TopBar } from './TopBar.js';
 
@@ -46,7 +46,7 @@ export function LeaderboardPage({ onHome, onProfile, username }: Props) {
             No rated games yet. Play a full game with 4 logged-in players to get on the board!
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 24 }}>
             {entries.map((e) => (
               <div
                 key={e.id}
@@ -82,6 +82,18 @@ export function LeaderboardPage({ onHome, onProfile, username }: Props) {
             ))}
           </div>
         )}
+        <button
+          onClick={() => history.back()}
+          style={{
+            marginTop: 8, padding: '11px 28px',
+            background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
+            color: '#0a0c10', border: 'none', borderRadius: 8,
+            fontSize: 14, cursor: 'pointer', fontWeight: 800,
+            letterSpacing: 0.3,
+          }}
+        >
+          Back
+        </button>
       </div>
       </div>
     </div>

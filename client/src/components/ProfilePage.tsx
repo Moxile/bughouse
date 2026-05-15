@@ -20,7 +20,22 @@ export function ProfilePage({ user, onHome, onSettings, onLogout }: Props) {
     }}>
       <TopBar onHome={onHome} username={user.username} />
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ width: '100%', maxWidth: 360, marginBottom: 12 }}>
+        <button
+          onClick={() => history.back()}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'none',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.45)',
+            borderRadius: 8, padding: '7px 14px',
+            fontSize: 13, cursor: 'pointer',
+          }}
+        >
+          ← Back
+        </button>
+      </div>
       <div style={{
         background: '#1a1a20',
         border: '1px solid rgba(255,255,255,0.08)',

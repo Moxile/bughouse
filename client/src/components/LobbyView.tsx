@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Seat, seatColor, seatBoard } from '@bughouse/shared';
 import { TopBar } from './TopBar.js';
 import type { GameStore } from '../hooks/useGame.js';
@@ -58,9 +58,16 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
     send({ type: 'set-rated', isRated });
   };
 
-  const allAuthenticated = ([0, 1, 2, 3] as const).every(
-    (s) => names[s] !== null && !names[s]!.isGuest,
+  const anyGuestPresent = ([0, 1, 2, 3] as const).some(
+    (s) => names[s] !== null && names[s]!.isGuest,
   );
+  const ratedEnabled = yourSeat !== null && !anyGuestPresent;
+
+  useEffect(() => {
+    if (anyGuestPresent && isRated && yourSeat !== null) {
+      send({ type: 'set-rated', isRated: false });
+    }
+  }, [anyGuestPresent, isRated, yourSeat, send]);
 
   const url = `${location.origin}/g/${code}`;
 
@@ -200,18 +207,18 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
         {/* Rated / Casual toggle */}
         <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
-            onClick={() => allAuthenticated && yourSeat !== null && handleSetRated(!isRated)}
-            disabled={!allAuthenticated || yourSeat === null}
+            onClick={() => ratedEnabled && handleSetRated(!isRated)}
+            disabled={!ratedEnabled}
             style={{
               position: 'relative',
               width: 40, height: 22,
-              background: (allAuthenticated && isRated) ? 'rgba(86,219,211,0.6)' : 'rgba(255,255,255,0.1)',
-              border: `1px solid ${(allAuthenticated && isRated) ? 'rgba(86,219,211,0.8)' : 'rgba(255,255,255,0.15)'}`,
+              background: isRated ? 'rgba(86,219,211,0.6)' : 'rgba(255,255,255,0.1)',
+              border: `1px solid ${isRated ? 'rgba(86,219,211,0.8)' : 'rgba(255,255,255,0.15)'}`,
               borderRadius: 11,
-              cursor: (allAuthenticated && yourSeat !== null) ? 'pointer' : 'default',
+              cursor: ratedEnabled ? 'pointer' : 'default',
               padding: 0,
               transition: 'background 200ms, border-color 200ms',
-              opacity: (!allAuthenticated || yourSeat === null) ? 0.4 : 1,
+              opacity: !ratedEnabled ? 0.4 : 1,
               flexShrink: 0,
             }}
             aria-label="Toggle rated game"
@@ -219,7 +226,7 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
             <span style={{
               position: 'absolute',
               top: 2,
-              left: (allAuthenticated && isRated) ? 20 : 2,
+              left: isRated ? 20 : 2,
               width: 16, height: 16,
               borderRadius: '50%',
               background: '#fff',
@@ -231,7 +238,7 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
             <div style={{
               fontFamily: "'JetBrains Mono', monospace",
               fontSize: 10,
-              color: !allAuthenticated
+              color: anyGuestPresent
                 ? 'rgba(255,255,255,0.2)'
                 : isRated
                   ? 'rgba(86,219,211,0.9)'
@@ -239,8 +246,8 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
               letterSpacing: 1, textTransform: 'uppercase',
               transition: 'color 200ms',
             }}>
-              {!allAuthenticated
-                ? 'Casual — needs 4 accounts to rate'
+              {anyGuestPresent
+                ? 'No rated game with anonymous player'
                 : isRated
                   ? 'Rated — affects rankings'
                   : 'Casual — no rating change'}

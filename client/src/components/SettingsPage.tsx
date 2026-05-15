@@ -91,6 +91,20 @@ export function SettingsPage({ user, onHome, onProfile, onUsernameChanged }: Pro
         </p>
 
         <button
+          onClick={() => history.back()}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'none',
+            border: '1px solid rgba(255,255,255,0.1)',
+            color: 'rgba(255,255,255,0.45)',
+            borderRadius: 8, padding: '7px 14px',
+            fontSize: 13, cursor: 'pointer',
+            marginBottom: 20,
+          }}
+        >
+          ← Back to profile
+        </button>
+        <button
           onClick={handleSave}
           disabled={!isValid || unchanged || status === 'saving'}
           style={{
