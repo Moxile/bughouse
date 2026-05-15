@@ -44,7 +44,7 @@ export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Pr
           callback: (window as unknown as Record<string, unknown>).handleCredentialResponse,
         });
         g.accounts.id.renderButton(googleBtnRef.current, {
-          type: 'standard', size: 'large', text: 'signin_with', shape: 'rectangular', logo_alignment: 'left', theme: 'filled_black',
+          type: 'standard', size: 'large', text: 'signin_with', shape: 'rectangular', logo_alignment: 'left', theme: 'filled_black', locale: 'en',
         });
       } else if (!cancelled) {
         setTimeout(render, 100);
