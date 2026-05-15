@@ -11,7 +11,7 @@ describe('LobbyManager.handleDisconnect', () => {
   it('clears pending timer on second disconnect (no spurious forfeit)', () => {
     const lm = new LobbyManager();
     const room = lm.createRoom();
-    lm.claimSeat(room, 0, 'A', 'pid-A');
+    lm.claimSeat(room, 0, 'A', 'pid-A', null);
 
     let timeoutsFired = 0;
     const onTimeout = () => { timeoutsFired += 1; };

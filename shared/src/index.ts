@@ -7,3 +7,5 @@ export * from './engine/moves.js';
 export * from './engine/apply.js';
 export * from './engine/game.js';
 export * from './notation.js';
+export * from './rating.js';
+export * from './auth.js';

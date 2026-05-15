@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Seat, seatColor, seatBoard } from '@bughouse/shared';
-import { BughouseIcon } from './BughouseIcon';
+import { TopBar } from './TopBar.js';
 import type { GameStore } from '../hooks/useGame.js';
 
 const SEAT_LABELS = ['Board 1 — White', 'Board 1 — Black', 'Board 2 — Black', 'Board 2 — White'];
@@ -19,12 +19,13 @@ type Props = {
   store: GameStore;
   code: string;
   send: (msg: any) => void;
-  onSetName: (name: string) => void;
-  playerName: string;
+  onHome?: () => void;
+  onProfile?: () => void;
+  username?: string | null;
 };
 
-export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
-  const { yourSeat, isPrivate } = store;
+export function LobbyView({ store, code, send, onHome, onProfile, username }: Props) {
+  const { yourSeat, isPrivate, isRated, names } = store;
   const [copied, setCopied] = useState(false);
 
   const handleClaim = (seat: Seat) => {
@@ -53,6 +54,14 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
     send({ type: 'set-private', isPrivate });
   };
 
+  const handleSetRated = (isRated: boolean) => {
+    send({ type: 'set-rated', isRated });
+  };
+
+  const allAuthenticated = ([0, 1, 2, 3] as const).every(
+    (s) => names[s] !== null && !names[s]!.isGuest,
+  );
+
   const url = `${location.origin}/g/${code}`;
 
   const handleCopy = () => {
@@ -67,9 +76,6 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px 16px',
       fontFamily: "'Geist', 'Inter', sans-serif",
       position: 'relative',
     }}>
@@ -79,18 +85,10 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
         background: 'radial-gradient(ellipse at 40% 30%, rgba(86,219,211,0.06) 0%, transparent 50%), radial-gradient(ellipse at 70% 70%, rgba(167,139,250,0.04) 0%, transparent 50%)',
       }} />
 
+      <TopBar onHome={onHome ?? (() => {})} onProfile={onProfile} username={username} />
+
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 16px' }}>
       <div style={{ width: '100%', maxWidth: 560, position: 'relative', zIndex: 1 }}>
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}>
-          <BughouseIcon size={30} />
-          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 0.3 }}>BUGHOUSE</span>
-          <span style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10, color: 'rgba(255,255,255,0.3)',
-            letterSpacing: 1, marginLeft: 8,
-            textTransform: 'uppercase',
-          }}>lobby</span>
-        </div>
 
         {/* Share link */}
         <div style={{ marginBottom: 24 }}>
@@ -126,28 +124,6 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
           </div>
         </div>
 
-        {/* Name input */}
-        <div style={{ marginBottom: 24 }}>
-          <label style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10, color: 'rgba(255,255,255,0.35)',
-            letterSpacing: 1, textTransform: 'uppercase',
-            display: 'block', marginBottom: 8,
-          }}>Your name</label>
-          <input
-            value={playerName}
-            onChange={(e) => onSetName(e.target.value.slice(0, 20))}
-            style={{
-              padding: '8px 12px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: 7, fontSize: 14, color: '#fff',
-              outline: 'none', width: 220,
-              fontFamily: "'Geist', 'Inter', sans-serif",
-            }}
-          />
-        </div>
-
         {/* Time control */}
         <div style={{ marginBottom: 24 }}>
           <div style={{
@@ -180,7 +156,7 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
         </div>
 
         {/* Private game toggle */}
-        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
           <button
             onClick={() => yourSeat !== null && handleSetPrivate(!isPrivate)}
             disabled={yourSeat === null}
@@ -221,11 +197,64 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
           </div>
         </div>
 
+        {/* Rated / Casual toggle */}
+        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button
+            onClick={() => allAuthenticated && yourSeat !== null && handleSetRated(!isRated)}
+            disabled={!allAuthenticated || yourSeat === null}
+            style={{
+              position: 'relative',
+              width: 40, height: 22,
+              background: (allAuthenticated && isRated) ? 'rgba(86,219,211,0.6)' : 'rgba(255,255,255,0.1)',
+              border: `1px solid ${(allAuthenticated && isRated) ? 'rgba(86,219,211,0.8)' : 'rgba(255,255,255,0.15)'}`,
+              borderRadius: 11,
+              cursor: (allAuthenticated && yourSeat !== null) ? 'pointer' : 'default',
+              padding: 0,
+              transition: 'background 200ms, border-color 200ms',
+              opacity: (!allAuthenticated || yourSeat === null) ? 0.4 : 1,
+              flexShrink: 0,
+            }}
+            aria-label="Toggle rated game"
+          >
+            <span style={{
+              position: 'absolute',
+              top: 2,
+              left: (allAuthenticated && isRated) ? 20 : 2,
+              width: 16, height: 16,
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 200ms',
+              display: 'block',
+            }} />
+          </button>
+          <div>
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10,
+              color: !allAuthenticated
+                ? 'rgba(255,255,255,0.2)'
+                : isRated
+                  ? 'rgba(86,219,211,0.9)'
+                  : 'rgba(255,255,255,0.35)',
+              letterSpacing: 1, textTransform: 'uppercase',
+              transition: 'color 200ms',
+            }}>
+              {!allAuthenticated
+                ? 'Casual — needs 4 accounts to rate'
+                : isRated
+                  ? 'Rated — affects rankings'
+                  : 'Casual — no rating change'}
+            </div>
+          </div>
+        </div>
+
         {/* Seat grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
           {([0, 1, 2, 3] as Seat[]).map((seat) => {
             const isMine = yourSeat === seat;
-            const name = store.names[seat];
+            const seatInfo = store.names[seat];
+            const name = seatInfo?.name ?? null;
+            const rating = seatInfo?.rating ?? null;
             const ready = store.ready[seat];
             const team = TEAM_OF[seat];
             const accent = SEAT_ACCENT[seat];
@@ -259,7 +288,16 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
                       fontSize: 12, fontWeight: 700, color: '#fff',
                       flexShrink: 0,
                     }}>{name[0]?.toUpperCase()}</div>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
+                    <div>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
+                      {rating !== null && (
+                        <span style={{
+                          display: 'block',
+                          fontFamily: "'JetBrains Mono', monospace",
+                          fontSize: 10, color: 'rgba(86,219,211,0.7)',
+                        }}>{rating}</span>
+                      )}
+                    </div>
                     {ready && isMine ? (
                       <button
                         onClick={handleUnready}
@@ -336,6 +374,7 @@ export function LobbyView({ store, code, send, onSetName, playerName }: Props) {
           Game begins automatically.
         </div>
 
+      </div>
       </div>
     </div>
   );

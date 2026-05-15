@@ -1,4 +1,4 @@
-import { GameEvent, GameState, Seat, isValidSeat } from '@bughouse/shared';
+import { GameEvent, GameState, RatingChange, Seat, isValidSeat } from '@bughouse/shared';
 import { randomUUID, randomInt } from 'node:crypto';
 import { createGameState } from '../engine/game.js';
 
@@ -10,6 +10,7 @@ export type PlayerSlot = {
   seat: Seat;
   name: string;
   playerId: string; // uuid stored in client localStorage
+  userId: string | null; // authenticated user id, null for guests
   ready: boolean;
   connected: boolean;
   disconnectTimer?: ReturnType<typeof setTimeout>;
@@ -36,6 +37,11 @@ export type Room = {
   // Hidden from the public games list when true. Persists across rematches
   // and new-seating since it lives on the Room, not the GameState.
   isPrivate: boolean;
+  // When true and all 4 seats are authenticated, the game will affect ratings.
+  isRated: boolean;
+  // Rating changes from the last rated game. Set on game end, cleared on
+  // next game start. Included in broadcastState so clients can show deltas.
+  ratingChanges: Record<Seat, RatingChange> | null;
 };
 
 export type RoomClient = {
@@ -66,6 +72,8 @@ export class LobbyManager {
       seriesId: randomUUID(),
       seriesIndex: 0,
       isPrivate: false,
+      isRated: true,
+      ratingChanges: null,
     };
     this.rooms.set(code, room);
     return room;
@@ -91,16 +99,20 @@ export class LobbyManager {
     seat: Seat,
     name: string,
     playerId: string,
+    userId: string | null,
   ): PlayerSlot | null {
     if (!isValidSeat(seat)) return null;
     if (room.game.status !== 'lobby') return null;
     if (room.slots.has(seat)) {
-      // Allow re-claim if same playerId (reconnect).
+      // Allow re-claim if same playerId or same userId (reconnect).
       const existing = room.slots.get(seat)!;
-      if (existing.playerId !== playerId) return null;
+      const samePlayer = userId
+        ? existing.userId === userId
+        : existing.playerId === playerId;
+      if (!samePlayer) return null;
       return existing;
     }
-    const slot: PlayerSlot = { seat, name, playerId, ready: false, connected: true };
+    const slot: PlayerSlot = { seat, name, playerId, userId, ready: false, connected: true };
     room.slots.set(seat, slot);
     return slot;
   }

@@ -12,8 +12,7 @@ export class GameSocket {
     this.ws = new WebSocket(`${proto}://${location.host}/ws`);
     this.ws.onopen = () => {
       const playerId = sessionStorage.getItem('playerId') ?? undefined;
-      const name = localStorage.getItem('playerName') ?? 'Player';
-      this.send({ type: 'join', code, playerId, name });
+      this.send({ type: 'join', code, playerId });
       for (const msg of this.queue) this.sendRaw(msg);
       this.queue = [];
     };

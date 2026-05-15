@@ -1,14 +1,17 @@
 import React from 'react';
+import { TopBar } from './TopBar.js';
 
-type Props = { onBack: () => void };
+type Props = { onHome: () => void; onProfile?: () => void; username?: string | null };
 
-export function RulesPage({ onBack }: Props) {
+export function RulesPage({ onHome, onProfile, username }: Props) {
   return (
     <div style={{
       minHeight: '100vh',
       background: '#0a0c10',
       color: 'rgba(255,255,255,0.88)',
       fontFamily: "'Geist', 'Inter', sans-serif",
+      display: 'flex',
+      flexDirection: 'column',
       position: 'relative',
     }}>
       {/* Ambient glow */}
@@ -17,21 +20,9 @@ export function RulesPage({ onBack }: Props) {
         background: 'radial-gradient(ellipse at 50% 20%, rgba(86,219,211,0.06) 0%, transparent 55%), radial-gradient(ellipse at 80% 80%, rgba(167,139,250,0.05) 0%, transparent 50%)',
       }} />
 
-      <div style={{ maxWidth: 620, margin: '0 auto', padding: '48px 20px 64px', position: 'relative', zIndex: 1 }}>
-        <button
-          onClick={onBack}
-          style={{
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: '#56dbd3', fontSize: 13, padding: 0, marginBottom: 40,
-            fontFamily: "'JetBrains Mono', monospace",
-            letterSpacing: 0.5,
-            display: 'flex', alignItems: 'center', gap: 6,
-            opacity: 0.85,
-          }}
-        >
-          ← back
-        </button>
+      <TopBar onHome={onHome} onProfile={onProfile} username={username} />
 
+      <div style={{ maxWidth: 620, margin: '0 auto', padding: '40px 20px 64px', position: 'relative', zIndex: 1 }}>
         {/* Header */}
         <div style={{ marginBottom: 40 }}>
           <h1 style={{
@@ -86,7 +77,7 @@ export function RulesPage({ onBack }: Props) {
         </Section>
 
         <button
-          onClick={onBack}
+          onClick={onHome}
           style={{
             marginTop: 48, padding: '11px 28px',
             background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',

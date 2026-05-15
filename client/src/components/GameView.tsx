@@ -36,6 +36,8 @@ type Props = {
   store: GameStore;
   send: (msg: any) => void;
   onHome?: () => void;
+  onProfile?: () => void;
+  auth?: { user: { id: string; username?: string } | null };
 };
 
 function SectionLabel({ text, accent }: { text: string; accent: string }) {
@@ -283,6 +285,8 @@ function GameHeader({
   soundSet,
   onSoundSet,
   onHome,
+  username,
+  onProfile,
 }: {
   onResign: () => void;
   canResign: boolean;
@@ -294,6 +298,8 @@ function GameHeader({
   soundSet: SoundSetKey;
   onSoundSet: (k: SoundSetKey) => void;
   onHome?: () => void;
+  username?: string;
+  onProfile?: () => void;
 }) {
   return (
     <header style={{
@@ -342,33 +348,63 @@ function GameHeader({
         )}
       </div>
 
-      {/* Actions */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ThemePicker
-          current={colorScheme}
-          onChange={onColorScheme}
-          currentPieceSet={pieceSet}
-          onPieceSetChange={onPieceSet}
-          currentSoundSet={soundSet}
-          onSoundSetChange={onSoundSet}
-        />
-        {canResign && (
-          <button
-            onClick={onResign}
-            style={{
-              background: 'transparent',
-              border: '1px solid rgba(239,68,68,0.4)',
-              color: '#ff5757',
-              padding: '7px 16px',
-              borderRadius: 6,
-              cursor: 'pointer',
-              fontFamily: "'Geist', 'Inter', sans-serif",
-              fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
-              transition: 'background 120ms',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-          >RESIGN</button>
+      {/* Actions + profile */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ThemePicker
+            current={colorScheme}
+            onChange={onColorScheme}
+            currentPieceSet={pieceSet}
+            onPieceSetChange={onPieceSet}
+            currentSoundSet={soundSet}
+            onSoundSetChange={onSoundSet}
+          />
+          {canResign && (
+            <button
+              onClick={onResign}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(239,68,68,0.4)',
+                color: '#ff5757',
+                padding: '7px 16px',
+                borderRadius: 6,
+                cursor: 'pointer',
+                fontFamily: "'Geist', 'Inter', sans-serif",
+                fontSize: 11, fontWeight: 700, letterSpacing: 0.5,
+                transition: 'background 120ms',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+            >RESIGN</button>
+          )}
+        </div>
+        {username && (
+          <>
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.1)' }} />
+            <button
+              onClick={onProfile}
+              title={username}
+              style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
+                border: 'none', cursor: onProfile ? 'pointer' : 'default',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 700, color: '#0a0c10',
+                boxShadow: '0 2px 8px rgba(86,219,211,0.25)',
+                transition: 'transform 120ms, box-shadow 120ms',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.08)';
+                e.currentTarget.style.boxShadow = '0 4px 16px rgba(86,219,211,0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(86,219,211,0.25)';
+              }}
+            >
+              {username.charAt(0).toUpperCase()}
+            </button>
+          </>
         )}
       </div>
     </header>
@@ -400,7 +436,7 @@ function useBoardLayout() {
   return layout;
 }
 
-export function GameView({ store, send, onHome }: Props) {
+export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   const { game, yourSeat } = store;
 
   // Derived early so they can be used in hooks below.
@@ -898,6 +934,8 @@ export function GameView({ store, send, onHome }: Props) {
         soundSet={soundSet}
         onSoundSet={handleSoundSet}
         onHome={onHome}
+        username={auth?.user?.username}
+        onProfile={onProfile}
       />
 
 
@@ -1029,10 +1067,33 @@ export function GameView({ store, send, onHome }: Props) {
                 fontSize: 11, color: 'rgba(255,255,255,0.4)',
                 letterSpacing: 0.5,
                 textTransform: 'uppercase',
-                marginBottom: yourSeat !== null ? 14 : 0,
+                marginBottom: 10,
               }}>
                 {REASON_LABEL[game.result!.reason] ?? game.result!.reason}
               </div>
+              {/* Rating change delta */}
+              {yourSeat !== null && store.ratingChanges ? (
+                <div style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 16, fontWeight: 700,
+                  color: (store.ratingChanges[yourSeat]?.delta ?? 0) >= 0 ? '#34d399' : '#ef5757',
+                  marginBottom: 10,
+                }}>
+                  {(store.ratingChanges[yourSeat]?.delta ?? 0) >= 0 ? '+' : ''}
+                  {store.ratingChanges[yourSeat]?.delta ?? 0}
+                  <span style={{ fontSize: 11, fontWeight: 400, color: 'rgba(255,255,255,0.4)', marginLeft: 6 }}>
+                    rating
+                  </span>
+                </div>
+              ) : yourSeat !== null && (
+                <div style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 10, color: 'rgba(255,255,255,0.3)',
+                  marginBottom: 10,
+                }}>
+                  unrated
+                </div>
+              )}
               {yourSeat !== null && (
                 <>
                   <button

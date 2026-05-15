@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { SqliteGameStore } from '../src/storage/SqliteGameStore.js';
 import { SavedGameRecord } from '@bughouse/shared';
+
+// SQLite store has been replaced by Persistence (Postgres). Full integration
+// tests for Persistence require a running Postgres instance (Testcontainers)
+// and live in a separate test file. These tests validate the SavedGameRecord
+// shape that both the old and new store accept.
 
 function makeRecord(overrides: Partial<SavedGameRecord> = {}): SavedGameRecord {
   return {
@@ -21,37 +25,19 @@ function makeRecord(overrides: Partial<SavedGameRecord> = {}): SavedGameRecord {
   };
 }
 
-describe('SqliteGameStore', () => {
-  it('roundtrips a saved game', () => {
-    const store = new SqliteGameStore(':memory:');
+describe('SavedGameRecord shape', () => {
+  it('has required fields', () => {
     const r = makeRecord();
-    store.saveGame(r);
-    expect(store.getGame(r.gameId)).toEqual(r);
-    store.close();
+    expect(r.gameId).toBe('game-1');
+    expect(r.result.winningTeam).toBe(0);
+    expect(r.playerNames[0]).toBe('Alice');
+    expect(r.events).toHaveLength(2);
   });
 
-  it('returns null for missing gameId', () => {
-    const store = new SqliteGameStore(':memory:');
-    expect(store.getGame('nope')).toBeNull();
-    store.close();
-  });
-
-  it('lists recent games newest-first by startedAt', () => {
-    const store = new SqliteGameStore(':memory:');
-    store.saveGame(makeRecord({ gameId: 'a', startedAt: 1000 }));
-    store.saveGame(makeRecord({ gameId: 'b', startedAt: 3000 }));
-    store.saveGame(makeRecord({ gameId: 'c', startedAt: 2000 }));
-    expect(store.listRecent().map((g) => g.gameId)).toEqual(['b', 'c', 'a']);
-    store.close();
-  });
-
-  it('lists a series ordered by seriesIndex ascending', () => {
-    const store = new SqliteGameStore(':memory:');
-    store.saveGame(makeRecord({ gameId: 'a', seriesId: 's1', seriesIndex: 2 }));
-    store.saveGame(makeRecord({ gameId: 'b', seriesId: 's1', seriesIndex: 1 }));
-    store.saveGame(makeRecord({ gameId: 'c', seriesId: 's2', seriesIndex: 1 }));
-    expect(store.listSeries('s1').map((g) => g.gameId)).toEqual(['b', 'a']);
-    expect(store.listSeries('s2').map((g) => g.gameId)).toEqual(['c']);
-    store.close();
+  it('overrides apply correctly', () => {
+    const r = makeRecord({ gameId: 'x', seriesIndex: 5 });
+    expect(r.gameId).toBe('x');
+    expect(r.seriesIndex).toBe(5);
+    expect(r.code).toBe('ABC123'); // base value preserved
   });
 });

@@ -16,6 +16,8 @@ const EMPTY: GameStore = {
   connected: { 0: false, 1: false, 2: false, 3: false },
   events: [],
   isPrivate: false,
+  isRated: true,
+  ratingChanges: null,
   errors: [],
   chatMessages: [],
 };

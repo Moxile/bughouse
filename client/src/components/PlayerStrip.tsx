@@ -76,10 +76,12 @@ function Clock({ ms, active, large }: { ms: number; active: boolean; large?: boo
 
 export function PlayerStrip({ seat, store, isYou, position, large }: Props) {
   const ms = useClock(store.game, seat);
-  const name = store.names[seat] ?? `Seat ${seat + 1}`;
+  const info = store.names[seat];
+  const name = info?.name ?? `Seat ${seat + 1}`;
+  const rating = info?.rating ?? null;
   const ready = store.ready[seat];
   const connected = store.connected[seat];
-  const seatHasPlayer = store.names[seat] !== null;
+  const seatHasPlayer = info !== null;
 
   const isActive = store.game?.status === 'playing' &&
     store.game.boards[seat < 2 ? 0 : 1].turn === (seat === 0 || seat === 3 ? 'w' : 'b');
@@ -143,6 +145,16 @@ export function PlayerStrip({ seat, store, isYou, position, large }: Props) {
                 </span>
               )}
             </span>
+            {rating !== null && (
+              <span style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: fontSize - 1,
+                color: 'rgba(86,219,211,0.7)',
+                fontWeight: 500,
+              }}>
+                {rating}
+              </span>
+            )}
             {!connected && seatHasPlayer && (
               <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 10, flexShrink: 0 }}>●</span>
             )}

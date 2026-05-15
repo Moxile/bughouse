@@ -1,8 +1,4 @@
 FROM node:22-alpine AS base
-# Build tools — better-sqlite3 normally has a musl prebuild, but if one is
-# ever missing for the target arch this lets npm fall back to source compile
-# instead of failing the build with an opaque gyp error.
-RUN apk add --no-cache python3 make g++
 WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY shared/package.json ./shared/
@@ -14,7 +10,9 @@ RUN npm install --frozen-lockfile
 COPY shared ./shared
 RUN npm --workspace shared run build
 
-# Build client
+# Build client (VITE_ vars must be baked in at build time)
+ARG VITE_GOOGLE_CLIENT_ID
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 COPY client ./client
 RUN npm --workspace client run build
 
@@ -22,13 +20,8 @@ RUN npm --workspace client run build
 COPY server ./server
 RUN npm --workspace server run build
 
-# Strip dev deps so the runtime image only carries production deps. Keeps
-# the native better-sqlite3 binding already compiled/installed for this arch.
 RUN npm prune --omit=dev
 
-# Production image — no npm install, just copies the pruned node_modules and
-# built artifacts from the builder. Avoids re-downloading the native module
-# and avoids needing build tools in the final image.
 FROM node:22-alpine
 WORKDIR /app
 COPY --from=base /app/package.json /app/package-lock.json* ./
@@ -43,7 +36,6 @@ COPY --from=base /app/client/dist ./client/dist
 
 ENV NODE_ENV=production
 ENV PORT=3000
-# SERVER_PKG_DIR is the server package directory; used to locate client/dist.
 ENV CLIENT_DIST=/app/client/dist
 
 EXPOSE 3000

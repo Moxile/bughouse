@@ -1,16 +1,36 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bughouse
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: bughouse
+    volumes:
+      - bughouse-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bughouse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   bughouse:
     build:
       context: .
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
     container_name: bughouse
     init: true
     ports:
       - "3000:3000"
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      DB_PATH: /data/bughouse.db
-    volumes:
-      - bughouse-data:/data
+      DATABASE_URL: postgres://bughouse:devpass@postgres:5432/bughouse
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
 
 volumes:
-  bughouse-data:
+  bughouse-pg-data:

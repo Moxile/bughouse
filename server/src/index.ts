@@ -3,15 +3,15 @@ import { readFileSync } from 'node:fs';
 import { join, extname, resolve, sep } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { ConnectionManager } from './net/ConnectionManager.js';
-import { SqliteGameStore } from './storage/SqliteGameStore.js';
+import { Persistence } from './storage/Persistence.js';
 import { TokenBucket } from './net/RateLimiter.js';
+import { handleAuthRoutes, pruneAuthLimiters } from './net/httpRoutes.js';
+import { resolveSession, parseCookies } from './auth/sessions.js';
 
 // Per-IP throttles. Capacity = burst, refill = sustained rate per second.
-// Hand-rolled (in-memory, single-machine) — fine for the current Fly setup.
 const roomCreateLimiter = new TokenBucket(10, 1 / 5); // 10 burst, 1 per 5s
 const wsUpgradeLimiter = new TokenBucket(20, 1);      // 20 burst, 1/s
 
-// Trust the first hop for x-forwarded-for; Fly proxies set this.
 function clientIp(req: IncomingMessage): string {
   const xf = req.headers['x-forwarded-for'];
   if (typeof xf === 'string') {
@@ -25,20 +25,21 @@ function clientIp(req: IncomingMessage): string {
 setInterval(() => {
   roomCreateLimiter.prune();
   wsUpgradeLimiter.prune();
+  pruneAuthLimiters();
 }, 10 * 60 * 1000).unref();
 
 const PORT = Number(process.env.PORT ?? 3000);
-// When run via npm workspace scripts, cwd = the server package directory.
-// CLIENT_DIST env var overrides for custom deployments.
 const CLIENT_DIST = resolve(
   process.env.CLIENT_DIST ?? resolve(process.cwd(), '../client/dist'),
 );
-// SQLite file for persisted game records. In Docker, mount a volume on the
-// parent dir; on Fly, attach a volume.
-const DB_PATH = process.env.DB_PATH ?? resolve(process.cwd(), '../data/bughouse.db');
 
-// Applied to every HTTP response. Inline styles are required by React
-// style props, so style-src needs 'unsafe-inline'. Scripts stay strict.
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error('DATABASE_URL environment variable is required');
+  process.exit(1);
+}
+
+// Applied to every HTTP response.
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
@@ -46,11 +47,12 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "img-src 'self' data:",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "img-src 'self' data: https://lh3.googleusercontent.com",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/",
     "font-src 'self' https://fonts.gstatic.com",
-    "connect-src 'self' ws: wss:",
-    "script-src 'self'",
+    "connect-src 'self' https://accounts.google.com/gsi/ ws: wss:",
+    "script-src 'self' https://accounts.google.com/gsi/",
+    "frame-src https://accounts.google.com/gsi/",
     "frame-ancestors 'none'",
     "base-uri 'none'",
   ].join('; '),
@@ -78,7 +80,6 @@ function serveFile(path: string, res: import('node:http').ServerResponse): void 
     res.writeHead(200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' });
     res.end(data);
   } catch {
-    // File not found → serve index.html (SPA fallback).
     try {
       const data = readFileSync(join(CLIENT_DIST, 'index.html'));
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -90,93 +91,119 @@ function serveFile(path: string, res: import('node:http').ServerResponse): void 
   }
 }
 
-const store = new SqliteGameStore(DB_PATH);
-const cm = new ConnectionManager(store);
-console.log(`SQLite store ready at ${DB_PATH}`);
-
-// Best-effort clean shutdown so WAL mode flushes properly.
-for (const sig of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(sig, () => {
-    try { store.close(); } catch {}
-    process.exit(0);
-  });
-}
-
-const server = createServer((req, res) => {
-  setSecurityHeaders(res);
-  const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-
-  if (req.method === 'POST' && url.pathname === '/api/games') {
-    const ip = clientIp(req);
-    if (!roomCreateLimiter.take(ip)) {
-      res.writeHead(429, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'rate-limited' }));
-      return;
-    }
-    const code = cm.createRoom();
-    if (code === null) {
-      res.writeHead(503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'server-full' }));
-      return;
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ code }));
-    return;
-  }
-
-  if (req.method === 'GET' && url.pathname === '/api/games') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(cm.listRooms()));
-    return;
-  }
-
-  // Static files. Resolve under CLIENT_DIST and reject anything that escapes
-  // it. URL parsing already normalises ".." segments, but enforcing it here
-  // is cheap defense-in-depth.
-  const requested = url.pathname === '/'
-    ? join(CLIENT_DIST, 'index.html')
-    : resolve(CLIENT_DIST, '.' + url.pathname);
-  if (requested !== CLIENT_DIST && !requested.startsWith(CLIENT_DIST + sep)) {
-    res.writeHead(403);
-    res.end('Forbidden');
-    return;
-  }
-  serveFile(requested, res);
-});
-
-// Manual upgrade so we can enforce an Origin allowlist and rate-limit
-// WS handshakes before allocating a WebSocket. maxPayload is far below
-// ws's 100 MiB default — no legitimate client message exceeds ~1 KB.
-const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
-
 function isAllowedOrigin(origin: string, host: string): boolean {
   if (!origin) return false;
   if (origin === `https://${host}` || origin === `http://${host}`) return true;
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
-server.on('upgrade', (req, socket, head) => {
-  if (req.url !== '/ws') {
-    socket.destroy();
-    return;
+// Boot sequence: connect to Postgres (runs migrations), then start listening.
+Persistence.connect(DATABASE_URL).then((db) => {
+  console.log('[db] Postgres connected and migrations applied');
+  const cm = new ConnectionManager(db);
+
+  for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+    process.on(sig, () => {
+      db.close().finally(() => process.exit(0));
+    });
   }
-  const origin = (req.headers.origin as string | undefined) ?? '';
-  const host = (req.headers.host as string | undefined) ?? '';
-  if (!isAllowedOrigin(origin, host)) {
-    socket.destroy();
-    return;
-  }
-  if (!wsUpgradeLimiter.take(clientIp(req))) {
-    socket.destroy();
-    return;
-  }
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req);
+
+  const server = createServer(async (req, res) => {
+    setSecurityHeaders(res);
+    const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
+
+    // Auth, OAuth callback, leaderboard, and user routes.
+    if (url.pathname.startsWith('/api/auth') || url.pathname.startsWith('/api/leaderboard') || url.pathname.match(/^\/api\/users\//)) {
+      // CSRF: reject cross-origin state-mutating requests (not OAuth start/callback GETs).
+      if ((req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') && !url.pathname.includes('/callback')) {
+        const origin = (req.headers.origin as string | undefined) ?? '';
+        const host = (req.headers.host as string | undefined) ?? '';
+        if (!isAllowedOrigin(origin, host)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'forbidden' }));
+          return;
+        }
+      }
+      const handled = await handleAuthRoutes(req, res, db);
+      if (handled) return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/games') {
+      const ip = clientIp(req);
+      if (!roomCreateLimiter.take(ip)) {
+        res.writeHead(429, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'rate-limited' }));
+        return;
+      }
+      const code = cm.createRoom();
+      if (code === null) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'server-full' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ code }));
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/games') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(cm.listRooms()));
+      return;
+    }
+
+    const requested = url.pathname === '/'
+      ? join(CLIENT_DIST, 'index.html')
+      : resolve(CLIENT_DIST, '.' + url.pathname);
+    if (requested !== CLIENT_DIST && !requested.startsWith(CLIENT_DIST + sep)) {
+      res.writeHead(403);
+      res.end('Forbidden');
+      return;
+    }
+    serveFile(requested, res);
   });
-});
 
-wss.on('connection', (ws) => cm.handleConnection(ws));
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
 
-server.listen(PORT, () => {
-  console.log(`Bughouse server running on http://localhost:${PORT}`);
+  server.on('upgrade', async (req, socket, head) => {
+    if (req.url !== '/ws') {
+      socket.destroy();
+      return;
+    }
+    const origin = (req.headers.origin as string | undefined) ?? '';
+    const host = (req.headers.host as string | undefined) ?? '';
+    if (!isAllowedOrigin(origin, host)) {
+      socket.destroy();
+      return;
+    }
+    if (!wsUpgradeLimiter.take(clientIp(req))) {
+      socket.destroy();
+      return;
+    }
+
+    // Resolve session from cookie — silently fall back to guest on failure.
+    let userId: string | null = null;
+    let displayName: string | null = null;
+    try {
+      const user = await resolveSession(req, db);
+      if (user) { userId = user.id; displayName = user.username; }
+    } catch {
+      // Non-fatal: proceed as guest.
+    }
+
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req, userId, displayName);
+    });
+  });
+
+  wss.on('connection', (ws: import('ws').WebSocket, _req: unknown, userId: string | null, displayName: string | null) => {
+    cm.handleConnection(ws, userId, displayName);
+  });
+
+  server.listen(PORT, () => {
+    console.log(`Bughouse server running on http://localhost:${PORT}`);
+  });
+}).catch((e) => {
+  console.error('[db] Failed to connect:', e);
+  process.exit(1);
 });

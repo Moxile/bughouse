@@ -9,10 +9,12 @@ import {
   S_Error,
   S_State,
   S_Welcome,
+  SeatInfo,
   SavedGameRecord,
   Seat,
   SEATS,
   ServerMessage,
+  RatingChange,
   createGameState,
   isValidSeat,
   partnerOf,
@@ -20,7 +22,7 @@ import {
   teamOf,
   validateClientMessage,
 } from '@bughouse/shared';
-import { GameStore } from '../storage/SqliteGameStore.js';
+import { Persistence } from '../storage/Persistence.js';
 import { LobbyManager, Room } from '../game/LobbyManager.js';
 import { ClockManager } from '../game/ClockManager.js';
 import { TokenBucket } from './RateLimiter.js';
@@ -41,6 +43,8 @@ import { randomUUID } from 'node:crypto';
 type ClientState = {
   ws: WebSocket;
   playerId: string | null;
+  userId: string | null;       // null for guests
+  displayName: string | null;  // canonical name from user account
   seat: Seat | null;
   room: Room | null;
   name: string | null;
@@ -63,7 +67,7 @@ export class ConnectionManager {
   // Map from room.code -> ClockManager.
   private clocks = new Map<string, ClockManager>();
 
-  constructor(private readonly store: GameStore | null = null) {
+  constructor(private readonly store: Persistence | null = null) {
     setInterval(() => this.pruneRooms(), PRUNE_INTERVAL_MS);
   }
 
@@ -75,10 +79,12 @@ export class ConnectionManager {
     }
   }
 
-  handleConnection(ws: WebSocket): void {
+  handleConnection(ws: WebSocket, userId: string | null = null, displayName: string | null = null): void {
     const cs: ClientState = {
       ws,
       playerId: null,
+      userId,
+      displayName,
       seat: null,
       room: null,
       name: null,
@@ -145,32 +151,34 @@ export class ConnectionManager {
       case 'new-seating': return this.handleNewSeating(cs);
       case 'set-time-control': return this.handleSetTimeControl(cs, msg);
       case 'set-private': return this.handleSetPrivate(cs, msg);
+      case 'set-rated': return this.handleSetRated(cs, msg);
     }
   }
 
-  private handleJoin(cs: ClientState, msg: { code: string; playerId?: string; name: string }): void {
+  private handleJoin(cs: ClientState, msg: { code: string; playerId?: string }): void {
     const room = this.lobby.getRoom(msg.code.toUpperCase());
     if (!room) {
       this.send(cs.ws, { type: 'error', reason: 'room-not-found' });
       return;
     }
 
-    // Assign or restore playerId.
     const playerId = msg.playerId ?? randomUUID();
     cs.playerId = playerId;
-    cs.name = msg.name.trim().slice(0, 20) || 'Player';
+    // Authenticated users keep their account display name; guests use the join name.
+    cs.name = cs.displayName ?? 'Anonymous';
     cs.room = room;
     room.clients.add({ seat: cs.seat, playerId });
 
-    // If reconnecting to an existing seat:
-    if (msg.playerId) {
-      for (const slot of room.slots.values()) {
-        if (slot.playerId === msg.playerId) {
-          cs.seat = slot.seat;
-          this.lobby.handleReconnect(room, slot.seat);
-          break;
-        }
-      }
+    // Reconnect: prefer userId match for authed users, playerId for guests.
+    const reconnectSlot = cs.userId
+      ? [...room.slots.values()].find((s) => s.userId === cs.userId)
+      : msg.playerId
+      ? [...room.slots.values()].find((s) => s.playerId === msg.playerId)
+      : undefined;
+
+    if (reconnectSlot) {
+      cs.seat = reconnectSlot.seat;
+      this.lobby.handleReconnect(room, reconnectSlot.seat);
     }
 
     this.send(cs.ws, { type: 'welcome', playerId });
@@ -186,7 +194,7 @@ export class ConnectionManager {
       this.send(cs.ws, { type: 'error', reason: 'game-in-progress' });
       return;
     }
-    const slot = this.lobby.claimSeat(cs.room, msg.seat, cs.name, cs.playerId);
+    const slot = this.lobby.claimSeat(cs.room, msg.seat, cs.name, cs.playerId, cs.userId);
     if (!slot) {
       this.send(cs.ws, { type: 'error', reason: 'seat-taken' });
       return;
@@ -241,6 +249,16 @@ export class ConnectionManager {
     this.broadcastState(cs.room);
   }
 
+  private handleSetRated(cs: ClientState, msg: { isRated: boolean }): void {
+    if (!cs.room || cs.seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (cs.room.game.status !== 'lobby') return;
+    cs.room.isRated = msg.isRated;
+    this.broadcastState(cs.room);
+  }
+
   private handleSetTimeControl(cs: ClientState, msg: { minutes: number }): void {
     if (!cs.room || cs.seat === null) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
@@ -279,7 +297,7 @@ export class ConnectionManager {
   // Persist a finished game if it meets the bar. Called from every end path
   // (mate / king-capture inside a move, resign, flag, disconnect). Bumps the
   // room's seriesIndex only when a save actually happens — so series numbering
-  // stays dense across drop-outs.
+  // stays dense across drop-outs. Fire-and-forget: does not block the broadcast.
   private finalizeGame(room: Room, endedAt: number): void {
     if (!this.store) return;
     if (!shouldPersist(room)) return;
@@ -298,16 +316,26 @@ export class ConnectionManager {
       playerNames: snapshotPlayerNames(room),
       events: [...room.events],
     };
-    try {
-      this.store.saveGame(record);
-      room.seriesIndex = nextIndex;
-      console.log(
-        `[store] saved game ${record.gameId} (room ${room.code}, ` +
-        `series ${room.seriesId.slice(0, 8)} #${nextIndex}, ${record.events.length} events)`,
-      );
-    } catch (e) {
-      console.error(`[store] failed to save game for room ${room.code}:`, e);
-    }
+
+    const seatUserIds: Record<Seat, string | null> = {
+      0: room.slots.get(0)?.userId ?? null,
+      1: room.slots.get(1)?.userId ?? null,
+      2: room.slots.get(2)?.userId ?? null,
+      3: room.slots.get(3)?.userId ?? null,
+    };
+
+    this.store.saveGame(record, seatUserIds, room.isRated)
+      .then((changes) => {
+        room.seriesIndex = nextIndex;
+        if (changes) room.ratingChanges = changes;
+        console.log(
+          `[store] saved game ${record.gameId} (room ${room.code}, ` +
+          `series ${room.seriesId.slice(0, 8)} #${nextIndex}, ${record.events.length} events)`,
+        );
+      })
+      .catch((e) => {
+        console.error(`[store] failed to save game for room ${room.code}:`, e);
+      });
   }
 
   private handleMove(cs: ClientState, msg: { boardId: number; from: number; to: number }): void {
@@ -472,6 +500,7 @@ export class ConnectionManager {
     const prevClockMs = room.game.initialClockMs;
     room.game = createGameState(room.code, Date.now(), prevClockMs);
     room.events = [];
+    room.ratingChanges = null;
 
     // Keep all existing seat assignments (names, playerIds, connected status)
     // but mark everyone unready for the next game.
@@ -502,8 +531,10 @@ export class ConnectionManager {
       }
     }
 
-    // Preserve series score and time control across rematches.
-    const prevScore: [number, number] = [room.game.seriesScore[0], room.game.seriesScore[1]];
+    // Preserve series score across rematches. Seats swap (0↔1, 2↔3), so team
+    // numbers invert — swap the score so each player's team slot still reflects
+    // their own wins.
+    const prevScore: [number, number] = [room.game.seriesScore[1], room.game.seriesScore[0]];
     const prevClockMs = room.game.initialClockMs;
 
     // Replace game state with a fresh game, started immediately.
@@ -513,6 +544,7 @@ export class ConnectionManager {
     room.game.startedAt = now;
     room.game.lastClockUpdate = [now, now];
     room.events = [];
+    room.ratingChanges = null;
 
     // Reset clock manager.
     this.clocks.get(room.code)?.stopAll();
@@ -612,15 +644,16 @@ export class ConnectionManager {
   }
 
   private broadcastState(room: Room): void {
+    const slotInfo = (s: Seat): SeatInfo | null => {
+      const slot = room.slots.get(s);
+      if (!slot) return null;
+      return { name: slot.name, rating: null, isGuest: slot.userId === null };
+    };
+
     const stateBase: Omit<S_State, 'yourSeat'> = {
       type: 'state',
       game: room.game,
-      names: {
-        0: room.slots.get(0)?.name ?? null,
-        1: room.slots.get(1)?.name ?? null,
-        2: room.slots.get(2)?.name ?? null,
-        3: room.slots.get(3)?.name ?? null,
-      },
+      names: { 0: slotInfo(0), 1: slotInfo(1), 2: slotInfo(2), 3: slotInfo(3) },
       ready: {
         0: room.slots.get(0)?.ready ?? false,
         1: room.slots.get(1)?.ready ?? false,
@@ -635,6 +668,8 @@ export class ConnectionManager {
       },
       events: room.events,
       isPrivate: room.isPrivate,
+      isRated: room.isRated,
+      ratingChanges: room.ratingChanges ?? null,
     };
     // Send personalised copy to each client.
     for (const [ws, cs] of this.clients) {

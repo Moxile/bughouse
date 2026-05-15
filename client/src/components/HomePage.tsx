@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SplitBoardLogo } from './SplitBoardLogo';
+import { TopBar } from './TopBar.js';
 
 type RoomSummary = {
   code: string;
@@ -7,13 +8,52 @@ type RoomSummary = {
   players: (string | null)[];
 };
 
-type Props = { onJoin: (code: string) => void; onRules: () => void };
+type Props = {
+  onJoin: (code: string) => void;
+  onRules: () => void;
+  onProfile?: () => void;
+  onLeaderboard?: () => void;
+  auth?: { user: { displayName: string; username: string; rating: number } | null; logout: () => Promise<void> };
+};
 
-export function HomePage({ onJoin, onRules }: Props) {
+export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Props) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [liveGames, setLiveGames] = useState<RoomSummary[]>([]);
   const [hoveredCode, setHoveredCode] = useState<string | null>(null);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (auth?.user) return;
+    let cancelled = false;
+
+    const render = () => {
+      const g = (window as unknown as {
+        google?: {
+          accounts: {
+            id: {
+              initialize: (opts: Record<string, unknown>) => void;
+              renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
+            };
+          };
+        };
+      }).google;
+      if (g?.accounts?.id && googleBtnRef.current) {
+        g.accounts.id.initialize({
+          client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID as string,
+          callback: (window as unknown as Record<string, unknown>).handleCredentialResponse,
+        });
+        g.accounts.id.renderButton(googleBtnRef.current, {
+          type: 'standard', size: 'large', text: 'signin_with', shape: 'rectangular', logo_alignment: 'left', theme: 'filled_black',
+        });
+      } else if (!cancelled) {
+        setTimeout(render, 100);
+      }
+    };
+
+    render();
+    return () => { cancelled = true; };
+  }, [auth?.user]);
 
   useEffect(() => {
     const load = () =>
@@ -44,9 +84,6 @@ export function HomePage({ onJoin, onRules }: Props) {
       minHeight: '100vh',
       display: 'flex',
       flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '0 16px',
       position: 'relative',
     }}>
       {/* Ambient glow */}
@@ -55,6 +92,13 @@ export function HomePage({ onJoin, onRules }: Props) {
         background: 'radial-gradient(ellipse at 38% 32%, rgba(86,219,211,0.10) 0%, transparent 50%), radial-gradient(ellipse at 62% 32%, rgba(167,139,250,0.09) 0%, transparent 50%), radial-gradient(ellipse at 80% 80%, rgba(167,139,250,0.05) 0%, transparent 45%)',
       }} />
 
+      <TopBar
+        onHome={() => {}}
+        onProfile={onProfile}
+        username={auth?.user?.username ?? null}
+      />
+
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
       <div style={{ width: '100%', maxWidth: 380, position: 'relative', zIndex: 1 }}>
         {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: 36 }}>
@@ -173,8 +217,48 @@ export function HomePage({ onJoin, onRules }: Props) {
           </div>
         </div>
 
+        {/* Auth + leaderboard links */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 28, flexWrap: 'wrap' }}>
+          {auth?.user ? (
+            <>
+              <button
+                onClick={onProfile}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'rgba(86,219,211,0.08)', border: '1px solid rgba(86,219,211,0.2)',
+                  color: '#fff', borderRadius: 7, padding: '7px 14px',
+                  fontSize: 13, cursor: 'pointer',
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                }}
+              >
+                <span>{auth.user.username}</span>
+                <span style={{ color: '#56dbd3', fontFamily: "'JetBrains Mono', monospace", fontSize: 12 }}>
+                  {auth.user.rating}
+                </span>
+              </button>
+              <button
+                onClick={() => auth.logout()}
+                style={{ background: 'none', border: '1px solid rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.3)', borderRadius: 7, padding: '7px 12px', fontSize: 13, cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif" }}
+              >Sign out</button>
+            </>
+          ) : (
+            <div ref={googleBtnRef} />
+          )}
+          {onLeaderboard && (
+            <button
+              onClick={onLeaderboard}
+              style={{
+                background: 'none', border: '1px solid rgba(255,255,255,0.1)',
+                color: 'rgba(255,255,255,0.4)', borderRadius: 7, padding: '7px 14px',
+                fontSize: 13, cursor: 'pointer',
+                fontFamily: "'Geist', 'Inter', sans-serif",
+              }}
+            >Leaderboard</button>
+          )}
+        </div>
+
         <p style={{
-          marginTop: 36, color: 'rgba(255,255,255,0.25)', fontSize: 12,
+          marginTop: 20, color: 'rgba(255,255,255,0.25)', fontSize: 12,
           textAlign: 'center',
           fontFamily: "'Geist', 'Inter', sans-serif",
         }}>
@@ -275,6 +359,7 @@ export function HomePage({ onJoin, onRules }: Props) {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

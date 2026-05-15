@@ -127,20 +127,10 @@ describe('validateClientMessage', () => {
     });
   });
 
-  describe('join name sanitisation', () => {
-    it('trims and caps to 20 code points', () => {
-      const msg = validateClientMessage({ type: 'join', code: 'ABCDEF', name: 'a'.repeat(50) });
-      expect(msg && msg.type === 'join' && msg.name).toBe('a'.repeat(20));
-    });
-
-    it('falls back to "Player" when sanitised name is empty', () => {
-      const msg = validateClientMessage({ type: 'join', code: 'ABCDEF', name: '​​' });
-      expect(msg && msg.type === 'join' && msg.name).toBe('Player');
-    });
-
+  describe('join playerId validation', () => {
     it('rejects invalid playerId types', () => {
       expect(
-        validateClientMessage({ type: 'join', code: 'ABCDEF', name: 'x', playerId: 12 }),
+        validateClientMessage({ type: 'join', code: 'ABCDEF', playerId: 12 }),
       ).toBeNull();
     });
   });

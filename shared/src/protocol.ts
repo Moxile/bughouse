@@ -1,6 +1,7 @@
 // WebSocket message types shared between server and client.
 import { BoardId, DropPieceType, GameState, Seat, Square } from './types.js';
 import { GameEvent } from './events.js';
+import { RatingChange } from './auth.js';
 
 // ---------- Runtime validation ----------
 
@@ -46,10 +47,8 @@ export function validateClientMessage(raw: unknown): ClientMessage | null {
   switch (m.type) {
     case 'join': {
       if (typeof m.code !== 'string' || m.code.length === 0 || m.code.length > 16) return null;
-      if (typeof m.name !== 'string') return null;
       if (m.playerId !== undefined && (typeof m.playerId !== 'string' || m.playerId.length > 64)) return null;
-      const name = sanitizeText(m.name, 20) || 'Player';
-      return { type: 'join', code: m.code, playerId: m.playerId as string | undefined, name };
+      return { type: 'join', code: m.code, playerId: m.playerId as string | undefined };
     }
     case 'claim-seat': {
       if (!isValidSeat(m.seat)) return null;
@@ -93,6 +92,10 @@ export function validateClientMessage(raw: unknown): ClientMessage | null {
       if (typeof m.isPrivate !== 'boolean') return null;
       return { type: 'set-private', isPrivate: m.isPrivate };
     }
+    case 'set-rated': {
+      if (typeof m.isRated !== 'boolean') return null;
+      return { type: 'set-rated', isRated: m.isRated };
+    }
     default:
       return null;
   }
@@ -105,7 +108,6 @@ export type C_Join = {
   code: string;
   // Optional player ID stored in localStorage for reconnects.
   playerId?: string;
-  name: string;
 };
 
 export type C_ClaimSeat = {
@@ -182,6 +184,11 @@ export type C_SetPrivate = {
   isPrivate: boolean;
 };
 
+export type C_SetRated = {
+  type: 'set-rated';
+  isRated: boolean;
+};
+
 export type ClientMessage =
   | C_Join
   | C_ClaimSeat
@@ -197,9 +204,16 @@ export type ClientMessage =
   | C_Rematch
   | C_NewSeating
   | C_SetTimeControl
-  | C_SetPrivate;
+  | C_SetPrivate
+  | C_SetRated;
 
 // ---------- Server → Client ----------
+
+export type SeatInfo = {
+  name: string;
+  rating: number | null;
+  isGuest: boolean;
+};
 
 // Full game snapshot broadcast after every state change.
 export type S_State = {
@@ -207,8 +221,8 @@ export type S_State = {
   game: GameState;
   // The player's own seat, or null if spectating.
   yourSeat: Seat | null;
-  // Map of seat -> player name.
-  names: Record<Seat, string | null>;
+  // Map of seat -> player info (name, rating, guest status). null = empty seat.
+  names: Record<Seat, SeatInfo | null>;
   // Map of seat -> ready flag.
   ready: Record<Seat, boolean>;
   // Map of seat -> connected flag.
@@ -219,6 +233,11 @@ export type S_State = {
   events: GameEvent[];
   // Whether the room is hidden from the public games list.
   isPrivate: boolean;
+  // Whether the room is set to rated mode (only applies when all 4 are authenticated).
+  isRated: boolean;
+  // Rating changes from the just-finished game. Present only when all 4 players
+  // were authenticated and isRated was true. Null otherwise (unrated game).
+  ratingChanges: Record<Seat, RatingChange> | null;
 };
 
 export type S_Error = {
