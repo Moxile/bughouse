@@ -646,21 +646,23 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   const [draggedHandPiece, setDraggedHandPiece] = useState<DropPieceType | null>(null);
   const [handDragPos, setHandDragPos] = useState<{ x: number; y: number } | null>(null);
   const handDragCleanupRef = useRef<(() => void) | null>(null);
-  const [premove, setPremove] = useState<PremoveState | null>(null);
-  // Tracks which board the queued premove belongs to. A premove is always
-  // for one specific board, so we fire it only when it's our turn on that board.
-  const [premovedBoardId, setPremovedBoardId] = useState<BoardId | null>(null);
+  const [premoves, setPremoves] = useState<Partial<Record<BoardId, PremoveState>>>({});
 
-  const setPremoveForBoard = useCallback((state: PremoveState | null, boardId: BoardId | null) => {
-    setPremove(state);
-    setPremovedBoardId(boardId);
+  const setPremoveForBoard = useCallback((state: PremoveState, boardId: BoardId) => {
+    setPremoves(prev => ({ ...prev, [boardId]: state }));
   }, []);
+
+  const clearPremoveForBoard = useCallback((boardId: BoardId) => {
+    setPremoves(prev => { const next = { ...prev }; delete next[boardId]; return next; });
+  }, []);
+
+  const clearAllPremoves = useCallback(() => setPremoves({}), []);
 
   const selectHandPiece = useCallback((piece: DropPieceType | null, boardId: BoardId) => {
     setSelectedPiece(piece);
     setSelectedPieceBoardId(piece !== null ? boardId : null);
-    setPremoveForBoard(null, null);
-  }, [setPremoveForBoard]);
+    clearPremoveForBoard(boardId);
+  }, [clearPremoveForBoard]);
 
   const isYourTurn = useCallback((boardId: BoardId): boolean => {
     const seat = ownsBoard(boardId);
@@ -741,21 +743,26 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   }, [game, yourSeat, yourSeats]);
 
   useEffect(() => {
-    if (!game || !premove || premovedBoardId === null) return;
-    if (game.status !== 'playing') { setPremoveForBoard(null, null); return; }
-    const seat = ownsBoard(premovedBoardId);
-    if (seat === null) { setPremoveForBoard(null, null); return; }
-    const board = game.boards[premovedBoardId];
-    if (board.pendingPromotion) return;
-    if (board.turn !== seatColor(seat)) return;
-    if (premove.type === 'move') {
-      send({ type: 'move', boardId: premovedBoardId, from: premove.from, to: premove.to });
-    } else {
-      send({ type: 'drop', boardId: premovedBoardId, piece: premove.piece, to: premove.to });
+    if (!game) return;
+    if (game.status !== 'playing') { clearAllPremoves(); return; }
+    for (const _boardId of [0, 1]) {
+      const boardId = _boardId as BoardId;
+      const pm = premoves[boardId];
+      if (!pm) continue;
+      const seat = ownsBoard(boardId);
+      if (seat === null) { clearPremoveForBoard(boardId); continue; }
+      const board = game.boards[boardId];
+      if (board.pendingPromotion) continue;
+      if (board.turn !== seatColor(seat)) continue;
+      if (pm.type === 'move') {
+        send({ type: 'move', boardId, from: pm.from, to: pm.to });
+      } else {
+        send({ type: 'drop', boardId, piece: pm.piece, to: pm.to });
+      }
+      clearPremoveForBoard(boardId);
     }
-    setPremoveForBoard(null, null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game, yourSeat, yourSeats, premove, premovedBoardId, send]);
+  }, [game, yourSeat, yourSeats, premoves, send]);
 
   const handleMove = useCallback((boardId: BoardId, from: Square, to: Square) => {
     send({ type: 'move', boardId, from, to });
@@ -781,11 +788,11 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
 
     setDraggedHandPiece(piece);
     setSelectedPiece(null);
-    setPremoveForBoard(null, null);
 
     // For simul, determine which board the dragged piece came from via selectedPieceBoardId;
     // fall back to the primary seat's board for single-seat players.
     const dragBoardId: BoardId | null = selectedPieceBoardId ?? (yourSeat !== null ? seatBoard(yourSeat) : null);
+    if (dragBoardId !== null) clearPremoveForBoard(dragBoardId);
 
     const onMove = (e: PointerEvent) => {
       setHandDragPos({ x: e.clientX, y: e.clientY });
@@ -817,7 +824,7 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
     };
-  }, [yourSeat, selectedPieceBoardId, setPremoveForBoard, send, isYourTurn]);
+  }, [yourSeat, selectedPieceBoardId, setPremoveForBoard, clearPremoveForBoard, send, isYourTurn]);
 
   // Clean up lingering hand-drag listeners on unmount
   useEffect(() => () => { handDragCleanupRef.current?.(); }, []);
@@ -1010,20 +1017,39 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
           />
         </div>
 
-        <Board
-          board={board.board}
-          perspective={perspective}
-          interaction={interaction}
-          pendingPromoSquare={pendingPromoSq}
-          promotionPickColor={reviewPos === null && inPromoMode && boardId === diagBoardId ? diagColor! : undefined}
-          premove={reviewPos === null && isMyBoard && premovedBoardId === boardId ? premove : null}
-          onCancelPremove={reviewPos === null && isMyBoard ? () => setPremoveForBoard(null, null) : undefined}
-          cellSize={cellSize}
-          colorScheme={colorScheme}
-          pieceSet={pieceSet}
-          lastMove={board.lastMove}
-          onHotkeyDrop={hotkeyDrop}
-        />
+        <div style={{
+          borderRadius: 4,
+          boxShadow: isMyBoard && isYourTurn(boardId) && game.status === 'playing' && reviewPos === null
+            ? '0 0 0 3px rgba(100, 220, 100, 0.55)'
+            : undefined,
+          transition: 'box-shadow 0.25s ease',
+        }}>
+          <Board
+            board={board.board}
+            perspective={perspective}
+            interaction={interaction}
+            pendingPromoSquare={pendingPromoSq}
+            promotionPickColor={reviewPos === null && inPromoMode && boardId === diagBoardId ? diagColor! : undefined}
+            premove={reviewPos === null && isMyBoard ? (premoves[boardId] ?? null) : null}
+            onCancelPremove={reviewPos === null && isMyBoard ? () => clearPremoveForBoard(boardId) : undefined}
+            cellSize={cellSize}
+            colorScheme={colorScheme}
+            pieceSet={pieceSet}
+            lastMove={board.lastMove}
+            onHotkeyDrop={hotkeyDrop}
+          />
+        </div>
+        {isMyBoard && !isYourTurn(boardId) && (premoves[boardId] ?? null) !== null && reviewPos === null && (
+          <div style={{
+            textAlign: 'center',
+            fontSize: 11,
+            color: 'rgba(255,200,80,0.85)',
+            letterSpacing: '0.04em',
+            marginTop: 2,
+          }}>
+            Premove queued
+          </div>
+        )}
 
         {/* Bottom player card */}
         <div style={{ ...stripStyle, borderRadius: 8 }}>
