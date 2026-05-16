@@ -6,6 +6,11 @@ type RoomSummary = {
   code: string;
   status: 'lobby' | 'playing';
   players: (string | null)[];
+  seatsFilled: number;
+  ownerName: string | null;
+  isRated: boolean;
+  minutes: number;
+  ratingRange: { min: number; max: number } | null;
 };
 
 type Props = {
@@ -13,12 +18,12 @@ type Props = {
   onRules: () => void;
   onProfile?: () => void;
   onLeaderboard?: () => void;
+  onCreateGame?: () => void;
   auth?: { user: { displayName: string; username: string; rating: number } | null; logout: () => Promise<void> };
 };
 
-export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Props) {
+export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, onCreateGame, auth }: Props) {
   const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
   const [liveGames, setLiveGames] = useState<RoomSummary[]>([]);
   const [hoveredCode, setHoveredCode] = useState<string | null>(null);
   const googleBtnRef = useRef<HTMLDivElement>(null);
@@ -56,23 +61,23 @@ export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Pr
   }, [auth?.user]);
 
   useEffect(() => {
+    const userRating = auth?.user?.rating ?? null;
     const load = () =>
       fetch('/api/games')
         .then((r) => r.json())
-        .then((rooms: RoomSummary[]) => setLiveGames(rooms.filter((r) => r.status === 'playing')))
+        .then((rooms: RoomSummary[]) => {
+          const visible = rooms.filter((r) => {
+            if (!r.ratingRange) return true;
+            if (userRating === null) return false; // guest hidden from rated-range rooms
+            return userRating >= r.ratingRange.min && userRating <= r.ratingRange.max;
+          });
+          setLiveGames(visible);
+        })
         .catch(() => {});
     load();
     const id = setInterval(load, 4000);
     return () => clearInterval(id);
-  }, []);
-
-  const createGame = async () => {
-    setLoading(true);
-    const res = await fetch('/api/games', { method: 'POST' });
-    const { code } = await res.json();
-    onJoin(code as string);
-    setLoading(false);
-  };
+  }, [auth?.user?.rating]);
 
   const joinGame = () => {
     const c = code.trim().toUpperCase();
@@ -122,24 +127,22 @@ export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Pr
 
         {/* Create game */}
         <button
-          onClick={createGame}
-          disabled={loading}
+          onClick={onCreateGame}
           style={{
             display: 'block', width: '100%', padding: '14px 0',
             background: 'linear-gradient(135deg, #56dbd3 0%, #3bb8b0 100%)',
             color: '#0a0c10',
             border: 'none',
             borderRadius: 10, fontSize: 15,
-            cursor: loading ? 'default' : 'pointer',
+            cursor: 'pointer',
             marginBottom: 10, fontWeight: 700,
             fontFamily: "'Geist', 'Inter', sans-serif",
             letterSpacing: 0.3,
             boxShadow: '0 4px 24px rgba(86,219,211,0.25)',
-            opacity: loading ? 0.7 : 1,
             transition: 'opacity 120ms',
           }}
         >
-          {loading ? 'Creating…' : '+ Create Game'}
+          + Create Game
         </button>
 
         {/* Rules */}
@@ -306,16 +309,55 @@ export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Pr
           </a>
         </div>
 
-        {liveGames.length > 0 && (
-          <div style={{ marginTop: 32 }}>
-            <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10, color: 'rgba(255,255,255,0.35)',
-              letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10,
-              textAlign: 'center',
-            }}>Live games</div>
+        {/* Open lobbies */}
+        {liveGames.filter((r) => r.status === 'lobby').length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <div style={sectionLabel}>Open lobbies</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {liveGames.map((r) => {
+              {liveGames.filter((r) => r.status === 'lobby').map((r) => (
+                <div key={r.code}
+                  onClick={() => onJoin(r.code)}
+                  onMouseEnter={() => setHoveredCode(r.code)}
+                  onMouseLeave={() => setHoveredCode(null)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    background: hoveredCode === r.code ? 'rgba(167,139,250,0.10)' : 'rgba(167,139,250,0.04)',
+                    border: '1px solid rgba(167,139,250,0.2)',
+                    borderRadius: 8, padding: '9px 12px', cursor: 'pointer',
+                    transition: 'background 0.15s',
+                  }}>
+                  <span style={{
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 12,
+                    color: '#a78bfa', fontWeight: 700, flexShrink: 0,
+                  }}>{r.seatsFilled}/4</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {r.ownerName ? `${r.ownerName}'s game` : 'Open lobby'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                      <Chip>{r.minutes}+0</Chip>
+                      {r.isRated && <Chip accent="#56dbd3">Rated</Chip>}
+                      {r.ratingRange && <Chip accent="#fbbf24">{r.ratingRange.min}–{r.ratingRange.max}</Chip>}
+                    </div>
+                  </div>
+                  <span style={{
+                    padding: '4px 10px', borderRadius: 5,
+                    background: 'rgba(167,139,250,0.15)', color: '#a78bfa',
+                    fontSize: 11, fontWeight: 700, flexShrink: 0,
+                    fontFamily: "'Geist', 'Inter', sans-serif",
+                  }}>Join</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Live games */}
+        {liveGames.filter((r) => r.status === 'playing').length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={sectionLabel}>Live games</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {liveGames.filter((r) => r.status === 'playing').map((r) => {
                 const players = r.players.filter(Boolean) as string[];
                 return (
                   <div key={r.code}
@@ -326,33 +368,17 @@ export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Pr
                       display: 'flex', alignItems: 'center', gap: 10,
                       background: hoveredCode === r.code ? 'rgba(52,211,153,0.10)' : 'rgba(52,211,153,0.04)',
                       border: '1px solid rgba(52,211,153,0.15)',
-                      borderRadius: 8, padding: '8px 12px',
-                      cursor: 'pointer',
+                      borderRadius: 8, padding: '8px 12px', cursor: 'pointer',
                       transition: 'background 0.15s',
                     }}>
-                    <span style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      fontSize: 10, flexShrink: 0,
-                      fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5,
-                      color: '#34d399',
-                    }}>
-                      <span style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: '#34d399',
-                        boxShadow: '0 0 6px #34d399',
-                        display: 'inline-block',
-                      }} />
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10, flexShrink: 0, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5, color: '#34d399' }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#34d399', boxShadow: '0 0 6px #34d399', display: 'inline-block' }} />
                       LIVE
                     </span>
-                    <span style={{
-                      flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.5)',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>{players.join(' · ')}</span>
-                    <span style={{
-                      fontFamily: "'JetBrains Mono', monospace",
-                      fontSize: 11, color: 'rgba(255,255,255,0.2)', flexShrink: 0,
-                      letterSpacing: 1,
-                    }}>{r.code}</span>
+                    <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.5)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {players.join(' · ')}
+                    </span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: 'rgba(255,255,255,0.2)', flexShrink: 0, letterSpacing: 1 }}>{r.code}</span>
                   </div>
                 );
               })}
@@ -362,5 +388,25 @@ export function HomePage({ onJoin, onRules, onProfile, onLeaderboard, auth }: Pr
       </div>
       </div>
     </div>
+  );
+}
+
+const sectionLabel: React.CSSProperties = {
+  fontFamily: "'JetBrains Mono', monospace",
+  fontSize: 10, color: 'rgba(255,255,255,0.35)',
+  letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
+};
+
+function Chip({ children, accent }: { children: React.ReactNode; accent?: string }) {
+  return (
+    <span style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 10,
+      color: accent ?? 'rgba(255,255,255,0.4)',
+      background: accent ? `${accent}18` : 'rgba(255,255,255,0.06)',
+      border: `1px solid ${accent ? `${accent}40` : 'rgba(255,255,255,0.1)'}`,
+      borderRadius: 4, padding: '1px 6px',
+      letterSpacing: 0.5,
+    }}>{children}</span>
   );
 }

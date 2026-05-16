@@ -142,3 +142,10 @@ export function teamOf(seat: Seat): 0 | 1 {
   return (seat % 2) as 0 | 1;
 }
 
+// Both seats belonging to a team. Team 0 = [0,2] (B0 White, B1 Black); Team 1 = [1,3] (B0 Black, B1 White).
+export function bothSeatsOfTeam(team: 0 | 1): [Seat, Seat] {
+  return team === 0 ? [0, 2] : [1, 3];
+}
+
+export type SimulTeams = { 0: boolean; 1: boolean };
+

@@ -94,12 +94,14 @@ export function SettingsPage({ user, onHome, onProfile, onUsernameChanged }: Pro
           onClick={() => history.back()}
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
-            background: 'none',
-            border: '1px solid rgba(255,255,255,0.1)',
-            color: 'rgba(255,255,255,0.45)',
-            borderRadius: 8, padding: '7px 14px',
-            fontSize: 13, cursor: 'pointer',
+            background: 'linear-gradient(135deg, #56dbd3 0%, #3bb8b0 100%)',
+            border: 'none',
+            color: '#0a0c10',
+            borderRadius: 8, padding: '9px 18px',
+            fontSize: 13, fontWeight: 700, cursor: 'pointer',
             marginBottom: 20,
+            boxShadow: '0 2px 12px rgba(86,219,211,0.2)',
+            fontFamily: "'Geist', 'Inter', sans-serif",
           }}
         >
           ← Back to profile

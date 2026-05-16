@@ -112,8 +112,8 @@ Persistence.connect(DATABASE_URL).then((db) => {
     setSecurityHeaders(res);
     const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
 
-    // Auth, OAuth callback, leaderboard, and user routes.
-    if (url.pathname.startsWith('/api/auth') || url.pathname.startsWith('/api/leaderboard') || url.pathname.match(/^\/api\/users\//)) {
+    // Auth, OAuth callback, leaderboard, user, and game-detail routes.
+    if (url.pathname.startsWith('/api/auth') || url.pathname.startsWith('/api/leaderboard') || url.pathname.match(/^\/api\/users\//) || url.pathname.match(/^\/api\/games\/[^/]+$/)) {
       // CSRF: reject cross-origin state-mutating requests (not OAuth start/callback GETs).
       if ((req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE') && !url.pathname.includes('/callback')) {
         const origin = (req.headers.origin as string | undefined) ?? '';
@@ -135,14 +135,35 @@ Persistence.connect(DATABASE_URL).then((db) => {
         res.end(JSON.stringify({ error: 'rate-limited' }));
         return;
       }
-      const code = cm.createRoom();
-      if (code === null) {
+
+      let body: Record<string, unknown> = {};
+      try {
+        const raw = await new Promise<string>((resolve, reject) => {
+          const chunks: Buffer[] = [];
+          req.on('data', (c: Buffer) => chunks.push(c));
+          req.on('end', () => resolve(Buffer.concat(chunks).toString()));
+          req.on('error', reject);
+        });
+        if (raw) body = JSON.parse(raw);
+      } catch { /* use defaults */ }
+
+      const minutes = typeof body.minutes === 'number' ? Math.max(1, Math.min(5, Math.round(body.minutes))) : 5;
+      const isPrivate = typeof body.isPrivate === 'boolean' ? body.isPrivate : false;
+      const isRated = typeof body.isRated === 'boolean' ? body.isRated : true;
+      const allowSimul = typeof body.allowSimul === 'boolean' ? body.allowSimul : false;
+      const rr = body.ratingRange as { min?: unknown; max?: unknown } | undefined;
+      const ratingRange = (rr && typeof rr.min === 'number' && typeof rr.max === 'number' && rr.min < rr.max)
+        ? { min: Math.round(rr.min), max: Math.round(rr.max) }
+        : null;
+
+      const result = cm.createRoom({ minutes, isPrivate, isRated, ratingRange, allowSimul });
+      if (result === null) {
         res.writeHead(503, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'server-full' }));
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ code }));
+      res.end(JSON.stringify({ code: result.code, ownerPlayerId: result.ownerPlayerId }));
       return;
     }
 
@@ -184,20 +205,21 @@ Persistence.connect(DATABASE_URL).then((db) => {
     // Resolve session from cookie — silently fall back to guest on failure.
     let userId: string | null = null;
     let displayName: string | null = null;
+    let rating: number | null = null;
     try {
       const user = await resolveSession(req, db);
-      if (user) { userId = user.id; displayName = user.username; }
+      if (user) { userId = user.id; displayName = user.username; rating = user.rating; }
     } catch {
       // Non-fatal: proceed as guest.
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit('connection', ws, req, userId, displayName);
+      wss.emit('connection', ws, req, userId, displayName, rating);
     });
   });
 
-  wss.on('connection', (ws: import('ws').WebSocket, _req: unknown, userId: string | null, displayName: string | null) => {
-    cm.handleConnection(ws, userId, displayName);
+  wss.on('connection', (ws: import('ws').WebSocket, _req: unknown, userId: string | null, displayName: string | null, rating: number | null) => {
+    cm.handleConnection(ws, userId, displayName, rating);
   });
 
   server.listen(PORT, () => {

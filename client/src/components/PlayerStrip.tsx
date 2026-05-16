@@ -126,7 +126,7 @@ export function PlayerStrip({ seat, store, isYou, position, large }: Props) {
         </div>
 
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{
               fontFamily: "'Geist', 'Inter', sans-serif",
               fontSize,
@@ -135,22 +135,27 @@ export function PlayerStrip({ seat, store, isYou, position, large }: Props) {
               whiteSpace: 'nowrap',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              maxWidth: large ? 160 : 100,
+              maxWidth: large ? 130 : 90,
               display: 'block',
             }}>
               {name}
-              {isYou && (
-                <span style={{ color: '#56dbd3', marginLeft: 5, fontWeight: 500, fontSize: fontSize - 1 }}>
-                  (you)
-                </span>
-              )}
             </span>
+            {isYou && (
+              <span style={{ color: 'rgba(86,219,211,0.7)', fontWeight: 500, fontSize: fontSize - 2, flexShrink: 0 }}>
+                you
+              </span>
+            )}
             {rating !== null && (
               <span style={{
                 fontFamily: "'JetBrains Mono', monospace",
-                fontSize: fontSize - 1,
-                color: 'rgba(86,219,211,0.7)',
-                fontWeight: 500,
+                fontSize: large ? 13 : 11,
+                color: 'rgba(255,255,255,0.6)',
+                fontWeight: 600,
+                background: 'rgba(255,255,255,0.07)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: 4,
+                padding: '0px 5px',
+                flexShrink: 0,
               }}>
                 {rating}
               </span>

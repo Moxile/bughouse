@@ -1,19 +1,20 @@
-import React, { useState, useEffect } from 'react';
-import { Seat, seatColor, seatBoard } from '@bughouse/shared';
+import React, { useState } from 'react';
+import { Seat } from '@bughouse/shared';
 import { TopBar } from './TopBar.js';
 import type { GameStore } from '../hooks/useGame.js';
 
-const SEAT_LABELS = ['Board 1 — White', 'Board 1 — Black', 'Board 2 — Black', 'Board 2 — White'];
+// Team 0: seats 0 & 2 (teal) — Team 1: seats 1 & 3 (red)
+const TEAM_COLOR = ['#56dbd3', '#ef5757'] as const;
+const TEAM_BG    = ['rgba(86,219,211,0.08)', 'rgba(239,87,87,0.08)'] as const;
+const TEAM_BORDER= ['rgba(86,219,211,0.3)', 'rgba(239,87,87,0.3)'] as const;
+const SEAT_COLOR_LABEL = ['White', 'Black', 'Black', 'White'] as const;
+const SEAT_BOARD_LABEL = ['Board 1', 'Board 1', 'Board 2', 'Board 2'] as const;
+const SEAT_TEAM  = [0, 1, 0, 1] as const;
 
-// Team 0: seats 0 & 2 (cyan/violet) — Team 1: seats 1 & 3 (red/amber)
-const SEAT_ACCENT = ['#56dbd3', '#ef5757', '#a78bfa', '#fbbf24'] as const;
-const SEAT_BG     = [
-  'rgba(86,219,211,0.06)',
-  'rgba(239,87,87,0.06)',
-  'rgba(167,139,250,0.06)',
-  'rgba(251,191,36,0.06)',
-] as const;
-const TEAM_OF: Record<Seat, 0 | 1> = { 0: 0, 1: 1, 2: 0, 3: 1 };
+// Layout order: [topLeft, topRight, bottomLeft, bottomRight]
+// topLeft=Seat1(B1 Black Team1), topRight=Seat2(B2 Black Team0)
+// bottomLeft=Seat0(B1 White Team0), bottomRight=Seat3(B2 White Team1)
+const GRID: [Seat, Seat, Seat, Seat] = [1, 2, 0, 3];
 
 type Props = {
   store: GameStore;
@@ -25,52 +26,33 @@ type Props = {
 };
 
 export function LobbyView({ store, code, send, onHome, onProfile, username }: Props) {
-  const { yourSeat, isPrivate, isRated, names } = store;
+  const { yourSeat, isRated, names, ownerSeat, ratingRange } = store;
+  const yourSeats: Seat[] = (store as any).yourSeats ?? (yourSeat !== null ? [yourSeat] : []);
+  const simulTeams: { 0: boolean; 1: boolean } = (store as any).simulTeams ?? { 0: false, 1: false };
+  const allowSimul: boolean = (store as any).allowSimul ?? false;
   const [copied, setCopied] = useState(false);
 
-  const handleClaim = (seat: Seat) => {
-    send({ type: 'claim-seat', seat });
-  };
+  const isOwner = yourSeat !== null && yourSeat === ownerSeat;
 
-  const handleReleaseSeat = () => {
-    send({ type: 'release-seat' });
-  };
-
-  const handleReady = () => {
-    send({ type: 'ready' });
-  };
-
-  const handleUnready = () => {
-    send({ type: 'unready' });
-  };
+  const handleClaim  = (seat: Seat) => send({ type: 'claim-seat', seat });
+  const handleRelease = () => send({ type: 'release-seat' });
+  const handleClaimSimul = (team: 0 | 1) => send({ type: 'claim-simul', team });
+  const handleReleaseSimul = (team: 0 | 1) => send({ type: 'release-simul', team });
+  const handleReady  = () => send({ type: 'ready' });
+  const handleUnready = () => send({ type: 'unready' });
+  const handleKick   = (seat: Seat) => send({ type: 'kick-seat', seat });
 
   const currentMinutes = Math.round((store.game?.initialClockMs ?? 5 * 60 * 1000) / 60000);
 
-  const handleSetTimeControl = (minutes: number) => {
-    send({ type: 'set-time-control', minutes });
-  };
+  const handleSetTimeControl = (m: number) => send({ type: 'set-time-control', minutes: m });
+  const handleSetRated   = (v: boolean) => send({ type: 'set-rated', isRated: v });
 
-  const handleSetPrivate = (isPrivate: boolean) => {
-    send({ type: 'set-private', isPrivate });
-  };
-
-  const handleSetRated = (isRated: boolean) => {
-    send({ type: 'set-rated', isRated });
-  };
-
-  const anyGuestPresent = ([0, 1, 2, 3] as const).some(
+  const anyGuestPresent = ([0, 1, 2, 3] as Seat[]).some(
     (s) => names[s] !== null && names[s]!.isGuest,
   );
-  const ratedEnabled = yourSeat !== null && !anyGuestPresent;
-
-  useEffect(() => {
-    if (anyGuestPresent && isRated && yourSeat !== null) {
-      send({ type: 'set-rated', isRated: false });
-    }
-  }, [anyGuestPresent, isRated, yourSeat, send]);
+  const canEnableRated = isOwner && !anyGuestPresent && store.names[yourSeat!]?.isGuest === false;
 
   const url = `${location.origin}/g/${code}`;
-
   const handleCopy = () => {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
@@ -80,13 +62,9 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
 
   return (
     <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      fontFamily: "'Geist', 'Inter', sans-serif",
-      position: 'relative',
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      fontFamily: "'Geist', 'Inter', sans-serif", position: 'relative',
     }}>
-      {/* Ambient glow */}
       <div style={{
         position: 'fixed', inset: 0, pointerEvents: 'none',
         background: 'radial-gradient(ellipse at 40% 30%, rgba(86,219,211,0.06) 0%, transparent 50%), radial-gradient(ellipse at 70% 70%, rgba(167,139,250,0.04) 0%, transparent 50%)',
@@ -94,295 +72,427 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
 
       <TopBar onHome={onHome ?? (() => {})} onProfile={onProfile} username={username} />
 
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 16px' }}>
-      <div style={{ width: '100%', maxWidth: 560, position: 'relative', zIndex: 1 }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '32px 16px' }}>
+      <div style={{ width: '100%', maxWidth: 600, position: 'relative', zIndex: 1 }}>
 
         {/* Share link */}
         <div style={{ marginBottom: 24 }}>
+          <Label>Share with 3 friends</Label>
           <div style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10, color: 'rgba(255,255,255,0.35)',
-            letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
-          }}>Share with 3 friends</div>
-          <div style={{
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: 8, padding: '10px 14px',
-            display: 'flex', alignItems: 'center', gap: 10,
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 8, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10,
           }}>
             <span style={{
               flex: 1, fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 13, color: '#56dbd3', wordBreak: 'break-all',
-              letterSpacing: 0.5,
+              fontSize: 13, color: '#56dbd3', wordBreak: 'break-all', letterSpacing: 0.5,
             }}>{url}</span>
-            <button
-              onClick={handleCopy}
-              style={{
-                padding: '5px 12px', fontSize: 11,
-                background: copied ? 'rgba(86,219,211,0.18)' : 'rgba(86,219,211,0.1)',
-                border: `1px solid ${copied ? 'rgba(86,219,211,0.5)' : 'rgba(86,219,211,0.25)'}`,
-                borderRadius: 5, cursor: 'pointer',
-                color: '#56dbd3', fontWeight: 600,
-                fontFamily: "'Geist', 'Inter', sans-serif",
-                whiteSpace: 'nowrap',
-                transition: 'background 0.2s, border-color 0.2s',
-              }}
-            >{copied ? '✓ Copied' : 'Copy'}</button>
+            <button onClick={handleCopy} style={{
+              padding: '5px 12px', fontSize: 11,
+              background: copied ? 'rgba(86,219,211,0.18)' : 'rgba(86,219,211,0.1)',
+              border: `1px solid ${copied ? 'rgba(86,219,211,0.5)' : 'rgba(86,219,211,0.25)'}`,
+              borderRadius: 5, cursor: 'pointer', color: '#56dbd3', fontWeight: 600,
+              fontFamily: "'Geist', 'Inter', sans-serif", whiteSpace: 'nowrap',
+              transition: 'background 0.2s, border-color 0.2s',
+            }}>{copied ? '✓ Copied' : 'Copy'}</button>
           </div>
         </div>
 
-        {/* Time control */}
-        <div style={{ marginBottom: 24 }}>
+        {/* Settings row */}
+        <div style={{
+          background: 'rgba(255,255,255,0.02)',
+          border: '1px solid rgba(255,255,255,0.07)',
+          borderRadius: 10, padding: '14px 16px',
+          marginBottom: 24, display: 'flex', flexWrap: 'wrap', gap: 20,
+        }}>
+          {/* Time control */}
+          <div style={{ flex: '1 1 auto', minWidth: 200 }}>
+            <Label dim>Time control {!isOwner && <OwnerBadge />}</Label>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {[1, 2, 3, 4, 5].map((m) => {
+                const sel = currentMinutes === m;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => isOwner && handleSetTimeControl(m)}
+                    style={{
+                      padding: '5px 12px',
+                      background: sel ? 'rgba(86,219,211,0.15)' : 'rgba(255,255,255,0.04)',
+                      color: sel ? '#56dbd3' : 'rgba(255,255,255,0.45)',
+                      border: `1px solid ${sel ? 'rgba(86,219,211,0.5)' : 'rgba(255,255,255,0.09)'}`,
+                      borderRadius: 6, cursor: isOwner ? 'pointer' : 'default',
+                      fontSize: 13, fontWeight: sel ? 700 : 400,
+                      fontFamily: "'JetBrains Mono', monospace",
+                      opacity: !isOwner && !sel ? 0.5 : 1,
+                      transition: 'all 150ms',
+                    }}
+                  >{m}+0</button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Toggles */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, justifyContent: 'center' }}>
+            <Toggle
+              active={isRated}
+              onToggle={() => canEnableRated || (isOwner && isRated) ? handleSetRated(!isRated) : undefined}
+              disabled={!isOwner || (!isRated && !canEnableRated)}
+              activeColor="#56dbd3"
+              label={anyGuestPresent ? 'Casual (guest present)' : isRated ? 'Rated' : 'Casual'}
+            />
+          </div>
+        </div>
+
+        {/* Rating range display (if set) */}
+        {ratingRange && (
           <div style={{
-            fontFamily: "'JetBrains Mono', monospace",
-            fontSize: 10, color: 'rgba(255,255,255,0.35)',
-            letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
-          }}>Time control</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[1, 2, 3, 4, 5].map((m) => {
-              const selected = currentMinutes === m;
+            marginBottom: 16,
+            padding: '8px 14px',
+            background: 'rgba(251,191,36,0.06)',
+            border: '1px solid rgba(251,191,36,0.2)',
+            borderRadius: 8,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <span style={{ fontSize: 13 }}>⭐</span>
+            <span style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12, color: 'rgba(251,191,36,0.9)',
+            }}>
+              Rating range: {ratingRange.min} – {ratingRange.max}
+            </span>
+            {isOwner && (
+              <button
+                onClick={() => send({ type: 'set-rating-range', min: null, max: null })}
+                style={{
+                  marginLeft: 'auto', background: 'none', border: 'none',
+                  color: 'rgba(251,191,36,0.5)', fontSize: 12, cursor: 'pointer',
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                }}
+              >Remove</button>
+            )}
+          </div>
+        )}
+
+        {/* Seat grid — visual two-board layout */}
+        <div style={{ marginBottom: 20 }}>
+          {/* Team headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 6 }}>
+            {([1, 0] as (0 | 1)[]).map((team) => {
+              const color = TEAM_COLOR[team];
+              const label = team === 1 ? 'Team Red' : 'Team Teal';
+              const teamSeats: Seat[] = team === 0 ? [0, 2] : [1, 3];
+              const teamOccupied0 = names[teamSeats[0]!] !== null;
+              const teamOccupied1 = names[teamSeats[1]!] !== null;
+              const isSimulTeam = simulTeams[team];
+              const iAmOnTeam = yourSeats.some((s) => teamSeats.includes(s));
+              const teamFull = teamOccupied0 && teamOccupied1;
+              const canSimul = allowSimul && !isSimulTeam && !iAmOnTeam && yourSeats.length === 0 && !teamFull;
+              const mySimulTeam = isSimulTeam && iAmOnTeam;
+
               return (
-                <button
-                  key={m}
-                  onClick={() => handleSetTimeControl(m)}
-                  style={{
-                    padding: '6px 14px',
-                    background: selected ? 'rgba(86,219,211,0.15)' : 'rgba(255,255,255,0.04)',
-                    color: selected ? '#56dbd3' : 'rgba(255,255,255,0.5)',
-                    border: `1px solid ${selected ? 'rgba(86,219,211,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontSize: 13, fontWeight: selected ? 700 : 400,
-                    fontFamily: "'JetBrains Mono', monospace",
-                    transition: 'all 150ms',
-                  }}
-                >{m}+0</button>
+                <div key={team}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: allowSimul ? 6 : 0 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</span>
+                    {isSimulTeam && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(167,139,250,0.8)', letterSpacing: 1, marginLeft: 2 }}>SIMUL</span>}
+                  </div>
+                  {allowSimul && (
+                    mySimulTeam ? (
+                      <button
+                        onClick={() => handleReleaseSimul(team)}
+                        style={{
+                          width: '100%', padding: '4px 0', fontSize: 10,
+                          background: 'rgba(167,139,250,0.1)', color: 'rgba(167,139,250,0.7)',
+                          border: '1px solid rgba(167,139,250,0.3)', borderRadius: 5,
+                          cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif",
+                        }}
+                      >Leave both seats</button>
+                    ) : canSimul ? (
+                      <button
+                        onClick={() => handleClaimSimul(team)}
+                        style={{
+                          width: '100%', padding: '4px 0', fontSize: 10,
+                          background: 'rgba(167,139,250,0.1)', color: 'rgba(167,139,250,0.8)',
+                          border: '1px solid rgba(167,139,250,0.3)', borderRadius: 5,
+                          cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif",
+                          fontWeight: 600,
+                        }}
+                      >Simul both seats</button>
+                    ) : (
+                      <div style={{ height: 24 }} />
+                    )
+                  )}
+                </div>
               );
             })}
           </div>
-        </div>
 
-        {/* Private game toggle */}
-        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={() => yourSeat !== null && handleSetPrivate(!isPrivate)}
-            disabled={yourSeat === null}
-            style={{
-              position: 'relative',
-              width: 40, height: 22,
-              background: isPrivate ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)',
-              border: `1px solid ${isPrivate ? 'rgba(167,139,250,0.8)' : 'rgba(255,255,255,0.15)'}`,
-              borderRadius: 11,
-              cursor: yourSeat !== null ? 'pointer' : 'default',
-              padding: 0,
-              transition: 'background 200ms, border-color 200ms',
-              opacity: yourSeat === null ? 0.4 : 1,
-              flexShrink: 0,
-            }}
-            aria-label="Toggle private game"
-          >
-            <span style={{
-              position: 'absolute',
-              top: 2,
-              left: isPrivate ? 20 : 2,
-              width: 16, height: 16,
-              borderRadius: '50%',
-              background: '#fff',
-              transition: 'left 200ms',
-              display: 'block',
-            }} />
-          </button>
-          <div>
-            <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10, color: isPrivate ? 'rgba(167,139,250,0.9)' : 'rgba(255,255,255,0.35)',
-              letterSpacing: 1, textTransform: 'uppercase',
-              transition: 'color 200ms',
-            }}>
-              {isPrivate ? 'Private — hidden from lobby' : 'Public — visible in lobby'}
-            </div>
-          </div>
-        </div>
-
-        {/* Rated / Casual toggle */}
-        <div style={{ marginBottom: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button
-            onClick={() => ratedEnabled && handleSetRated(!isRated)}
-            disabled={!ratedEnabled}
-            style={{
-              position: 'relative',
-              width: 40, height: 22,
-              background: isRated ? 'rgba(86,219,211,0.6)' : 'rgba(255,255,255,0.1)',
-              border: `1px solid ${isRated ? 'rgba(86,219,211,0.8)' : 'rgba(255,255,255,0.15)'}`,
-              borderRadius: 11,
-              cursor: ratedEnabled ? 'pointer' : 'default',
-              padding: 0,
-              transition: 'background 200ms, border-color 200ms',
-              opacity: !ratedEnabled ? 0.4 : 1,
-              flexShrink: 0,
-            }}
-            aria-label="Toggle rated game"
-          >
-            <span style={{
-              position: 'absolute',
-              top: 2,
-              left: isRated ? 20 : 2,
-              width: 16, height: 16,
-              borderRadius: '50%',
-              background: '#fff',
-              transition: 'left 200ms',
-              display: 'block',
-            }} />
-          </button>
-          <div>
-            <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 10,
-              color: anyGuestPresent
-                ? 'rgba(255,255,255,0.2)'
-                : isRated
-                  ? 'rgba(86,219,211,0.9)'
-                  : 'rgba(255,255,255,0.35)',
-              letterSpacing: 1, textTransform: 'uppercase',
-              transition: 'color 200ms',
-            }}>
-              {anyGuestPresent
-                ? 'No rated game with anonymous player'
-                : isRated
-                  ? 'Rated — affects rankings'
-                  : 'Casual — no rating change'}
-            </div>
-          </div>
-        </div>
-
-        {/* Seat grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
-          {([0, 1, 2, 3] as Seat[]).map((seat) => {
-            const isMine = yourSeat === seat;
-            const seatInfo = store.names[seat];
-            const name = seatInfo?.name ?? null;
-            const rating = seatInfo?.rating ?? null;
-            const ready = store.ready[seat];
-            const team = TEAM_OF[seat];
-            const accent = SEAT_ACCENT[seat];
-            const bg = SEAT_BG[seat];
-
-            return (
-              <div
+          {/* 2×2 grid: [Seat1, Seat2] top row (Black), [Seat0, Seat3] bottom row (White) */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {GRID.map((seat) => (
+              <SeatCard
                 key={seat}
-                style={{
-                  background: isMine ? bg : 'rgba(255,255,255,0.02)',
-                  border: `1px solid ${isMine ? accent + '55' : 'rgba(255,255,255,0.07)'}`,
-                  borderRadius: 10,
-                  padding: '12px 14px',
-                  transition: 'border-color 200ms',
-                }}
-              >
-                <div style={{
-                  fontFamily: "'JetBrains Mono', monospace",
-                  fontSize: 9, color: 'rgba(255,255,255,0.35)',
-                  letterSpacing: 1, textTransform: 'uppercase',
-                  marginBottom: 8,
-                }}>
-                  {SEAT_LABELS[seat]} · Team {team + 1}
-                </div>
-                {name ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{
-                      width: 28, height: 28, borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${accent} 0%, ${accent}55 100%)`,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, fontWeight: 700, color: '#fff',
-                      flexShrink: 0,
-                    }}>{name[0]?.toUpperCase()}</div>
-                    <div>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>{name}</span>
-                      {rating !== null && (
-                        <span style={{
-                          display: 'block',
-                          fontFamily: "'JetBrains Mono', monospace",
-                          fontSize: 10, color: 'rgba(86,219,211,0.7)',
-                        }}>{rating}</span>
-                      )}
-                    </div>
-                    {ready && isMine ? (
-                      <button
-                        onClick={handleUnready}
-                        style={{
-                          padding: '4px 12px',
-                          background: 'transparent', color: '#34d399',
-                          border: '1px solid #34d39955', borderRadius: 5,
-                          cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                          fontFamily: "'Geist', 'Inter', sans-serif",
-                        }}
-                      >✓ READY ✕</button>
-                    ) : ready ? (
-                      <span style={{
-                        fontFamily: "'JetBrains Mono', monospace",
-                        fontSize: 10, color: '#34d399',
-                        letterSpacing: 0.5,
-                      }}>✓ READY</span>
-                    ) : isMine ? (
-                      <>
-                        <button
-                          onClick={handleReady}
-                          style={{
-                            padding: '4px 12px',
-                            background: '#34d399', color: '#0a0a0a',
-                            border: 'none', borderRadius: 5,
-                            cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                            fontFamily: "'Geist', 'Inter', sans-serif",
-                          }}
-                        >Ready</button>
-                        <button
-                          onClick={handleReleaseSeat}
-                          style={{
-                            padding: '4px 10px',
-                            background: 'transparent',
-                            color: 'rgba(255,255,255,0.5)',
-                            border: '1px solid rgba(255,255,255,0.15)',
-                            borderRadius: 5,
-                            cursor: 'pointer', fontSize: 11, fontWeight: 600,
-                            fontFamily: "'Geist', 'Inter', sans-serif",
-                          }}
-                        >Leave seat</button>
-                      </>
-                    ) : null}
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => handleClaim(seat)}
-                    disabled={yourSeat !== null && yourSeat !== seat}
-                    style={{
-                      padding: '6px 14px',
-                      background: `${accent}22`,
-                      color: accent,
-                      border: `1px solid ${accent}55`,
-                      borderRadius: 6,
-                      cursor: (yourSeat !== null && yourSeat !== seat) ? 'default' : 'pointer',
-                      fontSize: 12, fontWeight: 600,
-                      fontFamily: "'Geist', 'Inter', sans-serif",
-                      opacity: (yourSeat !== null && yourSeat !== seat) ? 0.4 : 1,
-                    }}
-                  >Sit here</button>
-                )}
-              </div>
-            );
-          })}
+                seat={seat}
+                store={store}
+                yourSeat={yourSeat}
+                yourSeats={yourSeats}
+                simulTeams={simulTeams}
+                isOwner={isOwner}
+                ownerSeat={ownerSeat}
+                onClaim={handleClaim}
+                onRelease={handleRelease}
+                onReleaseSimul={handleReleaseSimul}
+                onReady={handleReady}
+                onUnready={handleUnready}
+                onKick={handleKick}
+              />
+            ))}
+          </div>
+
+          {/* Board labels below */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 6 }}>
+            <div style={{ textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase' }}>Board 1</div>
+            <div style={{ textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase' }}>Board 2</div>
+          </div>
         </div>
 
         <div style={{
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 11, color: 'rgba(255,255,255,0.25)',
-          letterSpacing: 0.5, textAlign: 'center',
-          lineHeight: 1.6,
+          letterSpacing: 0.5, textAlign: 'center', lineHeight: 1.6,
         }}>
-          All 4 players must click <strong style={{ color: 'rgba(255,255,255,0.45)' }}>Ready</strong> to start.
-          Game begins automatically.
+          All seats must be filled and everyone must click{' '}
+          <strong style={{ color: 'rgba(255,255,255,0.45)' }}>Ready</strong> to start.
         </div>
 
       </div>
       </div>
+    </div>
+  );
+}
+
+// ── Sub-components ──────────────────────────────────────────────────
+
+function Label({ children, dim }: { children: React.ReactNode; dim?: boolean }) {
+  return (
+    <div style={{
+      fontFamily: "'JetBrains Mono', monospace",
+      fontSize: 9, color: dim ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.4)',
+      letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
+      display: 'flex', alignItems: 'center', gap: 6,
+    }}>{children}</div>
+  );
+}
+
+function OwnerBadge() {
+  return (
+    <span style={{
+      fontFamily: "'Geist', 'Inter', sans-serif",
+      fontSize: 9, color: 'rgba(251,191,36,0.6)',
+      letterSpacing: 0.5, textTransform: 'none',
+    }}>owner only</span>
+  );
+}
+
+function Toggle({
+  active, onToggle, disabled, activeColor, label,
+}: { active: boolean; onToggle: () => void; disabled?: boolean; activeColor: string; label: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: disabled ? 0.45 : 1 }}>
+      <button
+        onClick={onToggle}
+        style={{
+          position: 'relative', width: 36, height: 20,
+          background: active ? activeColor + '99' : 'rgba(255,255,255,0.1)',
+          border: `1px solid ${active ? activeColor : 'rgba(255,255,255,0.15)'}`,
+          borderRadius: 10, cursor: disabled ? 'default' : 'pointer',
+          padding: 0, transition: 'background 200ms, border-color 200ms', flexShrink: 0,
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 2, left: active ? 18 : 2,
+          width: 14, height: 14, borderRadius: '50%', background: '#fff',
+          transition: 'left 200ms', display: 'block',
+        }} />
+      </button>
+      <span style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 10, color: active ? activeColor : 'rgba(255,255,255,0.35)',
+        letterSpacing: 0.8, textTransform: 'uppercase', transition: 'color 200ms',
+        whiteSpace: 'nowrap',
+      }}>{label}</span>
+    </div>
+  );
+}
+
+function SeatCard({
+  seat, store, yourSeat, yourSeats, simulTeams, isOwner, ownerSeat, onClaim, onRelease, onReleaseSimul, onReady, onUnready, onKick,
+}: {
+  seat: Seat;
+  store: GameStore;
+  yourSeat: Seat | null;
+  yourSeats: Seat[];
+  simulTeams: { 0: boolean; 1: boolean };
+  isOwner: boolean;
+  ownerSeat: Seat | null;
+  onClaim: (s: Seat) => void;
+  onRelease: () => void;
+  onReleaseSimul: (team: 0 | 1) => void;
+  onReady: () => void;
+  onUnready: () => void;
+  onKick: (s: Seat) => void;
+}) {
+  const team = SEAT_TEAM[seat] as 0 | 1;
+  const teamColor  = TEAM_COLOR[team];
+  const teamBg     = TEAM_BG[team];
+  const teamBorder = TEAM_BORDER[team];
+  const isMine = yourSeats.includes(seat);
+  const isSimulTeam = simulTeams[team];
+  const seatInfo = store.names[seat];
+  const name = seatInfo?.name ?? null;
+  const rating = seatInfo?.rating ?? null;
+  const ready = store.ready[seat];
+  const isOccupied = name !== null;
+  const isSeatOwner = ownerSeat === seat;
+  const colorLabel = SEAT_COLOR_LABEL[seat];
+
+  const canClaim = !isOccupied && yourSeats.length === 0 && !isSimulTeam;
+  const canKick = isOwner && !isMine && isOccupied;
+
+  return (
+    <div style={{
+      background: isMine ? teamBg : 'rgba(255,255,255,0.02)',
+      border: `1px solid ${isMine ? teamBorder : 'rgba(255,255,255,0.07)'}`,
+      borderLeft: `3px solid ${isOccupied ? teamColor : 'rgba(255,255,255,0.1)'}`,
+      borderRadius: 10,
+      padding: '12px 14px',
+      transition: 'border-color 200ms',
+      minHeight: 88,
+      position: 'relative',
+    }}>
+      {/* Color label */}
+      <div style={{
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 8, color: 'rgba(255,255,255,0.3)',
+        letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8,
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        <span style={{ color: teamColor }}>●</span>
+        {colorLabel}
+        {isMine && <span style={{ color: '#56dbd3', marginLeft: 'auto' }}>you</span>}
+      </div>
+
+      {isOccupied ? (
+        <div>
+          {/* Player info row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            {/* Avatar */}
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              background: `linear-gradient(135deg, ${teamColor} 0%, ${teamColor}55 100%)`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700, color: '#fff', flexShrink: 0,
+            }}>
+              {name![0]?.toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {isSeatOwner && <span title="Room owner" style={{ fontSize: 12, lineHeight: 1 }}>👑</span>}
+                <span style={{
+                  fontWeight: 600, fontSize: 14, color: '#fff',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  maxWidth: 110,
+                }}>{name}</span>
+              </div>
+              {rating !== null && (
+                <span style={{
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: 11, color: teamColor, fontWeight: 600,
+                }}>{rating}</span>
+              )}
+            </div>
+            {/* Kick button (owner only, not on own seat) */}
+            {canKick && (
+              <button
+                onClick={() => onKick(seat)}
+                title="Kick player"
+                style={{
+                  background: 'none', border: '1px solid rgba(239,68,68,0.3)',
+                  color: 'rgba(239,68,68,0.6)', borderRadius: 5, padding: '3px 8px',
+                  fontSize: 10, cursor: 'pointer', flexShrink: 0,
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                  transition: 'border-color 120ms, color 120ms',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#ef5757'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.6)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(239,68,68,0.6)'; e.currentTarget.style.borderColor = 'rgba(239,68,68,0.3)'; }}
+              >Kick</button>
+            )}
+          </div>
+
+          {/* Ready controls */}
+          {isMine && !ready && (
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                onClick={onReady}
+                style={{
+                  flex: 1, padding: '5px 0',
+                  background: '#34d399', color: '#0a0a0a',
+                  border: 'none', borderRadius: 5,
+                  cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                }}
+              >Ready</button>
+              <button
+                onClick={() => isSimulTeam ? onReleaseSimul(team) : onRelease()}
+                style={{
+                  padding: '5px 10px',
+                  background: 'transparent', color: 'rgba(255,255,255,0.4)',
+                  border: '1px solid rgba(255,255,255,0.12)', borderRadius: 5,
+                  cursor: 'pointer', fontSize: 11,
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                }}
+              >Leave</button>
+            </div>
+          )}
+          {isMine && ready && (
+            <button
+              onClick={onUnready}
+              style={{
+                width: '100%', padding: '5px 0',
+                background: 'transparent', color: '#34d399',
+                border: '1px solid #34d39955', borderRadius: 5,
+                cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                fontFamily: "'Geist', 'Inter', sans-serif",
+              }}
+            >✓ Ready — click to unready</button>
+          )}
+          {!isMine && (
+            <div style={{
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10,
+              color: ready ? '#34d399' : 'rgba(255,255,255,0.3)',
+              letterSpacing: 0.5,
+            }}>
+              {ready ? '✓ Ready' : 'Not ready'}
+            </div>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={() => canClaim && onClaim(seat)}
+          disabled={!canClaim}
+          style={{
+            width: '100%', padding: '8px 0',
+            background: canClaim ? `${teamColor}22` : 'transparent',
+            color: canClaim ? teamColor : 'rgba(255,255,255,0.2)',
+            border: `1px solid ${canClaim ? teamColor + '55' : 'rgba(255,255,255,0.08)'}`,
+            borderRadius: 6, cursor: canClaim ? 'pointer' : 'default',
+            fontSize: 12, fontWeight: 600,
+            fontFamily: "'Geist', 'Inter', sans-serif",
+            transition: 'all 150ms',
+          }}
+        >{canClaim ? 'Sit here' : 'Empty'}</button>
+      )}
     </div>
   );
 }

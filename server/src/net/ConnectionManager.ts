@@ -4,26 +4,21 @@ import {
   GameEvent,
   GameEventDrop,
   GameEventMove,
-  GameState,
   S_Chat,
-  S_Error,
   S_State,
-  S_Welcome,
   SeatInfo,
   SavedGameRecord,
   Seat,
   SEATS,
   ServerMessage,
-  RatingChange,
   createGameState,
-  isValidSeat,
   partnerOf,
   seatBoard,
   teamOf,
   validateClientMessage,
 } from '@bughouse/shared';
 import { Persistence } from '../storage/Persistence.js';
-import { LobbyManager, Room } from '../game/LobbyManager.js';
+import { LobbyManager, Room, CreateRoomOptions, RatingRange } from '../game/LobbyManager.js';
 import { ClockManager } from '../game/ClockManager.js';
 import { TokenBucket } from './RateLimiter.js';
 import {
@@ -43,28 +38,47 @@ import { randomUUID } from 'node:crypto';
 type ClientState = {
   ws: WebSocket;
   playerId: string | null;
-  userId: string | null;       // null for guests
-  displayName: string | null;  // canonical name from user account
-  seat: Seat | null;
+  userId: string | null;
+  displayName: string | null;
+  rating: number | null;
+  // All seats held by this client. Empty = spectator. Simul players hold 2 seats.
+  seats: Seat[];
   room: Room | null;
   name: string | null;
-  // Per-connection inbound bucket. Bounds the cost of broadcastState fan-out
-  // and protects against a misbehaving or malicious client flooding moves.
   bucket: TokenBucket;
 };
 
-// 30 burst, 10 messages/sec sustained. Comfortably above any human play rate.
+// Returns the seat this client owns on the given board, or null.
+function ownedBoard(cs: ClientState, boardId: 0 | 1): Seat | null {
+  return cs.seats.find((s) => seatBoard(s) === boardId) ?? null;
+}
+
+// Primary seat (first in list), for backwards-compat with single-seat code paths.
+function primarySeat(cs: ClientState): Seat | null {
+  return cs.seats[0] ?? null;
+}
+
 const INBOUND_BURST = 30;
 const INBOUND_PER_SEC = 10;
 
-const PRUNE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const PRUNE_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_ROOMS = 5000;
+
+export type RoomSummary = {
+  code: string;
+  status: 'lobby' | 'playing';
+  players: (string | null)[];
+  seatsFilled: number;
+  ownerName: string | null;
+  isRated: boolean;
+  minutes: number;
+  ratingRange: RatingRange | null;
+  allowSimul: boolean;
+};
 
 export class ConnectionManager {
   private lobby = new LobbyManager();
-  // Map from ws -> client state.
   private clients = new Map<WebSocket, ClientState>();
-  // Map from room.code -> ClockManager.
   private clocks = new Map<string, ClockManager>();
 
   constructor(private readonly store: Persistence | null = null) {
@@ -79,13 +93,19 @@ export class ConnectionManager {
     }
   }
 
-  handleConnection(ws: WebSocket, userId: string | null = null, displayName: string | null = null): void {
+  handleConnection(
+    ws: WebSocket,
+    userId: string | null = null,
+    displayName: string | null = null,
+    rating: number | null = null,
+  ): void {
     const cs: ClientState = {
       ws,
       playerId: null,
       userId,
       displayName,
-      seat: null,
+      rating,
+      seats: [],
       room: null,
       name: null,
       bucket: new TokenBucket(INBOUND_BURST, INBOUND_PER_SEC),
@@ -118,20 +138,37 @@ export class ConnectionManager {
     });
   }
 
-  createRoom(): string | null {
+  // Returns { code, ownerPlayerId } on success, null if server is full.
+  createRoom(opts: Omit<CreateRoomOptions, 'ownerPlayerId'> & { ownerPlayerId?: string }): { code: string; ownerPlayerId: string } | null {
     if (this.lobby.roomCount() >= MAX_ROOMS) return null;
-    const room = this.lobby.createRoom();
-    return room.code;
+    const ownerPlayerId = opts.ownerPlayerId ?? randomUUID();
+    const room = this.lobby.createRoom({ ...opts, ownerPlayerId });
+    return { code: room.code, ownerPlayerId };
   }
 
-  listRooms(): { code: string; status: string; players: (string | null)[] }[] {
+  listRooms(): RoomSummary[] {
     return this.lobby.allRooms()
       .filter((r) => r.game.status !== 'ended' && !r.isPrivate)
-      .map((r) => ({
-        code: r.code,
-        status: r.game.status,
-        players: ([0, 1, 2, 3] as Seat[]).map((s) => r.slots.get(s)?.name ?? null),
-      }));
+      .map((r) => {
+        const ownerSlot = r.ownerPlayerId
+          ? [...r.slots.values()].find((s) => s.playerId === r.ownerPlayerId)
+          : null;
+        return {
+          code: r.code,
+          status: r.game.status as 'lobby' | 'playing',
+          players: ([0, 1, 2, 3] as Seat[]).map((s) => r.slots.get(s)?.name ?? null),
+          seatsFilled: r.slots.size,
+          ownerName: ownerSlot?.name ?? null,
+          isRated: r.isRated,
+          minutes: Math.round(r.game.initialClockMs / 60000),
+          ratingRange: r.ratingRange,
+          allowSimul: r.allowSimul,
+        };
+      });
+  }
+
+  private isOwner(cs: ClientState): boolean {
+    return !!cs.room?.ownerPlayerId && cs.room.ownerPlayerId === cs.playerId;
   }
 
   private handleMessage(cs: ClientState, msg: ClientMessage): void {
@@ -139,12 +176,14 @@ export class ConnectionManager {
       case 'join': return this.handleJoin(cs, msg);
       case 'claim-seat': return this.handleClaimSeat(cs, msg);
       case 'release-seat': return this.handleReleaseSeat(cs);
+      case ('claim-simul' as any): return this.handleClaimSimul(cs, msg as any);
+      case ('release-simul' as any): return this.handleReleaseSimul(cs, msg as any);
       case 'ready': return this.handleReady(cs);
       case 'unready': return this.handleUnready(cs);
       case 'move': return this.handleMove(cs, msg);
       case 'drop': return this.handleDrop(cs, msg);
       case 'promotion-select': return this.handlePromotionSelect(cs, msg);
-      case 'cancel-promotion': return this.handlePromotionCancel(cs);
+      case 'cancel-promotion': return this.handlePromotionCancel(cs, msg as any);
       case 'resign': return this.handleResign(cs);
       case 'chat': return this.handleChat(cs, msg);
       case 'rematch': return this.handleRematch(cs);
@@ -152,6 +191,8 @@ export class ConnectionManager {
       case 'set-time-control': return this.handleSetTimeControl(cs, msg);
       case 'set-private': return this.handleSetPrivate(cs, msg);
       case 'set-rated': return this.handleSetRated(cs, msg);
+      case 'kick-seat': return this.handleKickSeat(cs, msg);
+      case 'set-rating-range': return this.handleSetRatingRange(cs, msg);
     }
   }
 
@@ -164,21 +205,22 @@ export class ConnectionManager {
 
     const playerId = msg.playerId ?? randomUUID();
     cs.playerId = playerId;
-    // Authenticated users keep their account display name; guests use the join name.
     cs.name = cs.displayName ?? 'Anonymous';
     cs.room = room;
-    room.clients.add({ seat: cs.seat, playerId });
+    room.clients.add({ seat: primarySeat(cs), playerId });
 
-    // Reconnect: prefer userId match for authed users, playerId for guests.
-    const reconnectSlot = cs.userId
-      ? [...room.slots.values()].find((s) => s.userId === cs.userId)
+    // Reconnect: find ALL slots owned by this player (may be 2 in simul mode).
+    const reconnectSlots = cs.userId
+      ? [...room.slots.values()].filter((s) => s.userId === cs.userId)
       : msg.playerId
-      ? [...room.slots.values()].find((s) => s.playerId === msg.playerId)
-      : undefined;
+      ? [...room.slots.values()].filter((s) => s.playerId === msg.playerId)
+      : [];
 
-    if (reconnectSlot) {
-      cs.seat = reconnectSlot.seat;
-      this.lobby.handleReconnect(room, reconnectSlot.seat);
+    if (reconnectSlots.length > 0) {
+      cs.seats = reconnectSlots.map((s) => s.seat);
+      for (const slot of reconnectSlots) {
+        this.lobby.handleReconnect(room, slot.seat);
+      }
     }
 
     this.send(cs.ws, { type: 'welcome', playerId });
@@ -194,17 +236,36 @@ export class ConnectionManager {
       this.send(cs.ws, { type: 'error', reason: 'game-in-progress' });
       return;
     }
-    const slot = this.lobby.claimSeat(cs.room, msg.seat, cs.name, cs.playerId, cs.userId);
-    if (!slot) {
+
+    const result = this.lobby.claimSeat(
+      cs.room, msg.seat, cs.name, cs.playerId, cs.userId, cs.rating,
+    );
+
+    if (result === 'seat-taken') {
       this.send(cs.ws, { type: 'error', reason: 'seat-taken' });
       return;
     }
-    cs.seat = msg.seat;
+    if (result === 'guest-restricted') {
+      this.send(cs.ws, { type: 'error', reason: 'rating-range-set' });
+      return;
+    }
+    if (result === 'rating-range') {
+      this.send(cs.ws, { type: 'error', reason: 'outside-rating-range' });
+      return;
+    }
+
+    cs.seats = [msg.seat];
+
+    // Auto-disable rated if a guest just claimed a seat.
+    if (cs.userId === null && cs.room.isRated) {
+      cs.room.isRated = false;
+    }
+
     this.broadcastState(cs.room);
   }
 
   private handleReleaseSeat(cs: ClientState): void {
-    if (!cs.room || cs.seat === null) {
+    if (!cs.room || cs.seats.length === 0) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
       return;
     }
@@ -212,17 +273,109 @@ export class ConnectionManager {
       this.send(cs.ws, { type: 'error', reason: 'game-in-progress' });
       return;
     }
-    cs.room.slots.delete(cs.seat);
-    cs.seat = null;
+    const wasOwner = this.isOwner(cs);
+    for (const seat of cs.seats) cs.room.slots.delete(seat);
+    // Clear simul flag for the team if the player was simul.
+    for (const t of [0, 1] as (0 | 1)[]) {
+      if (cs.room.simulTeams[t]) {
+        const [s0, s1] = [t === 0 ? 0 : 1, t === 0 ? 2 : 3] as [Seat, Seat];
+        if (!cs.room.slots.has(s0) && !cs.room.slots.has(s1)) {
+          cs.room.simulTeams[t] = false;
+        }
+      }
+    }
+    cs.seats = [];
+    if (wasOwner) this.lobby.transferOwnership(cs.room);
+    this.broadcastState(cs.room);
+  }
+
+  private handleClaimSimul(cs: ClientState, msg: { team: 0 | 1 }): void {
+    if (!cs.room || !cs.playerId || !cs.name) {
+      this.send(cs.ws, { type: 'error', reason: 'not-joined' });
+      return;
+    }
+
+    const result = this.lobby.claimSimul(
+      cs.room, msg.team, cs.name, cs.playerId, cs.userId, cs.rating,
+    );
+
+    if (result === 'simul-not-allowed') {
+      this.send(cs.ws, { type: 'error', reason: 'simul-not-allowed' });
+      return;
+    }
+    if (result === 'not-lobby') {
+      this.send(cs.ws, { type: 'error', reason: 'game-in-progress' });
+      return;
+    }
+    if (result === 'team-occupied') {
+      this.send(cs.ws, { type: 'error', reason: 'seat-taken' });
+      return;
+    }
+    if (result === 'guest-restricted') {
+      this.send(cs.ws, { type: 'error', reason: 'rating-range-set' });
+      return;
+    }
+    if (result === 'rating-range') {
+      this.send(cs.ws, { type: 'error', reason: 'outside-rating-range' });
+      return;
+    }
+
+    cs.seats = result.map((s) => s.seat);
+
+    // Auto-disable rated if guest, or if it creates a mixed simul.
+    if (cs.userId === null && cs.room.isRated) {
+      cs.room.isRated = false;
+    } else if (cs.room.isRated && cs.room.simulTeams[0] !== cs.room.simulTeams[1]) {
+      cs.room.isRated = false;
+    }
+
+    this.broadcastState(cs.room);
+  }
+
+  private handleReleaseSimul(cs: ClientState, msg: { team: 0 | 1 }): void {
+    if (!cs.room || !cs.playerId) {
+      this.send(cs.ws, { type: 'error', reason: 'not-joined' });
+      return;
+    }
+
+    const released = this.lobby.releaseSimul(cs.room, msg.team, cs.playerId);
+    if (!released) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+
+    const wasOwner = this.isOwner(cs);
+    const teamSeats: Seat[] = msg.team === 0 ? [0, 2] : [1, 3];
+    cs.seats = cs.seats.filter((s) => !teamSeats.includes(s));
+    if (wasOwner) this.lobby.transferOwnership(cs.room);
+    this.broadcastState(cs.room);
+  }
+
+  private handleKickSeat(cs: ClientState, msg: { seat: Seat }): void {
+    if (!cs.room) return;
+    if (!this.isOwner(cs)) {
+      this.send(cs.ws, { type: 'error', reason: 'not-owner' });
+      return;
+    }
+    if (cs.room.game.status !== 'lobby') return;
+    if (cs.seats.includes(msg.seat)) return; // can't kick yourself
+
+    const removedSeats = this.lobby.kickSeat(cs.room, msg.seat);
+    // Clear the kicked player's seat state on all their connections.
+    for (const [, other] of this.clients) {
+      if (other.room?.code === cs.room.code && other.seats.some((s) => removedSeats.includes(s))) {
+        other.seats = other.seats.filter((s) => !removedSeats.includes(s));
+      }
+    }
     this.broadcastState(cs.room);
   }
 
   private handleReady(cs: ClientState): void {
-    if (!cs.room || cs.seat === null) {
+    if (!cs.room || cs.seats.length === 0 || !cs.playerId) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
       return;
     }
-    const allReady = this.lobby.setReady(cs.room, cs.seat);
+    const allReady = this.lobby.setReadyByPlayer(cs.room, cs.playerId);
     if (allReady) {
       this.startGame(cs.room);
     } else {
@@ -231,18 +384,22 @@ export class ConnectionManager {
   }
 
   private handleUnready(cs: ClientState): void {
-    if (!cs.room || cs.seat === null) {
+    if (!cs.room || cs.seats.length === 0 || !cs.playerId) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
       return;
     }
     if (cs.room.game.status !== 'lobby') return;
-    this.lobby.setUnready(cs.room, cs.seat);
+    this.lobby.setUnreadyByPlayer(cs.room, cs.playerId);
     this.broadcastState(cs.room);
   }
 
   private handleSetPrivate(cs: ClientState, msg: { isPrivate: boolean }): void {
-    if (!cs.room || cs.seat === null) {
+    if (!cs.room || cs.seats.length === 0) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (!this.isOwner(cs)) {
+      this.send(cs.ws, { type: 'error', reason: 'not-owner' });
       return;
     }
     cs.room.isPrivate = msg.isPrivate;
@@ -250,18 +407,49 @@ export class ConnectionManager {
   }
 
   private handleSetRated(cs: ClientState, msg: { isRated: boolean }): void {
-    if (!cs.room || cs.seat === null) {
+    if (!cs.room || cs.seats.length === 0) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
       return;
     }
+    if (!this.isOwner(cs)) {
+      this.send(cs.ws, { type: 'error', reason: 'not-owner' });
+      return;
+    }
     if (cs.room.game.status !== 'lobby') return;
+    if (msg.isRated && cs.userId === null) return;
+    if (msg.isRated) {
+      const anyGuest = [...cs.room.slots.values()].some((s) => s.userId === null);
+      if (anyGuest) return;
+      // Cannot enable rated in a mixed simul+normal room.
+      if (cs.room.simulTeams[0] !== cs.room.simulTeams[1]) return;
+    }
     cs.room.isRated = msg.isRated;
     this.broadcastState(cs.room);
   }
 
-  private handleSetTimeControl(cs: ClientState, msg: { minutes: number }): void {
-    if (!cs.room || cs.seat === null) {
+  private handleSetRatingRange(cs: ClientState, msg: { min: number | null; max: number | null }): void {
+    if (!cs.room || cs.seats.length === 0) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (!this.isOwner(cs)) {
+      this.send(cs.ws, { type: 'error', reason: 'not-owner' });
+      return;
+    }
+    if (cs.room.game.status !== 'lobby') return;
+    cs.room.ratingRange = (msg.min !== null && msg.max !== null)
+      ? { min: msg.min, max: msg.max }
+      : null;
+    this.broadcastState(cs.room);
+  }
+
+  private handleSetTimeControl(cs: ClientState, msg: { minutes: number }): void {
+    if (!cs.room || cs.seats.length === 0) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
+    if (!this.isOwner(cs)) {
+      this.send(cs.ws, { type: 'error', reason: 'not-owner' });
       return;
     }
     if (cs.room.game.status !== 'lobby') return;
@@ -286,25 +474,19 @@ export class ConnectionManager {
     this.broadcastState(room);
   }
 
-  // Append an event to the room's in-memory journal, assigning it the next
-  // 1-based seq. Overloads keep per-kind field-narrowing at call sites.
   private appendEvent(room: Room, ev: Omit<GameEventMove, 'seq'>): void;
   private appendEvent(room: Room, ev: Omit<GameEventDrop, 'seq'>): void;
   private appendEvent(room: Room, ev: Omit<GameEvent, 'seq'>): void {
     room.events.push({ ...ev, seq: room.events.length + 1 } as GameEvent);
   }
 
-  // Persist a finished game if it meets the bar. Called from every end path
-  // (mate / king-capture inside a move, resign, flag, disconnect). Bumps the
-  // room's seriesIndex only when a save actually happens — so series numbering
-  // stays dense across drop-outs. Fire-and-forget: does not block the broadcast.
   private finalizeGame(room: Room, endedAt: number): void {
     if (!this.store) return;
     if (!shouldPersist(room)) return;
     if (!room.game.startedAt || !room.game.result) return;
 
     const nextIndex = room.seriesIndex + 1;
-    const record: SavedGameRecord = {
+    const record = {
       gameId: randomUUID(),
       seriesId: room.seriesId,
       seriesIndex: nextIndex,
@@ -315,7 +497,8 @@ export class ConnectionManager {
       result: room.game.result,
       playerNames: snapshotPlayerNames(room),
       events: [...room.events],
-    };
+      simulTeams: { ...room.simulTeams },
+    } as SavedGameRecord;
 
     const seatUserIds: Record<Seat, string | null> = {
       0: room.slots.get(0)?.userId ?? null,
@@ -341,14 +524,17 @@ export class ConnectionManager {
   private handleMove(cs: ClientState, msg: { boardId: number; from: number; to: number }): void {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
-    const seat = cs.seat!;
+    const boardId = msg.boardId as 0 | 1;
+    const seat = ownedBoard(cs, boardId);
+    if (seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
     const now = Date.now();
     try {
       const out = applyGameMove(room.game, seat, { from: msg.from, to: msg.to });
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
-      // Defer logging if this move triggered a promotion: the event will be
-      // written atomically when the player picks the promoted piece.
       if (!out.triggeredPromotion) {
         this.appendEvent(room, {
           kind: 'move',
@@ -374,7 +560,12 @@ export class ConnectionManager {
   private handleDrop(cs: ClientState, msg: { boardId: number; piece: string; to: number }): void {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
-    const seat = cs.seat!;
+    const boardId = msg.boardId as 0 | 1;
+    const seat = ownedBoard(cs, boardId);
+    if (seat === null) {
+      this.send(cs.ws, { type: 'error', reason: 'no-seat' });
+      return;
+    }
     const now = Date.now();
     try {
       applyGameDrop(room.game, seat, { piece: msg.piece as any, to: msg.to });
@@ -395,21 +586,30 @@ export class ConnectionManager {
     }
   }
 
-  private handlePromotionSelect(cs: ClientState, msg: { diagonalSquare: number }): void {
+  private handlePromotionSelect(cs: ClientState, msg: { diagonalSquare: number; boardId?: number }): void {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
-    const seat = cs.seat!;
+    // Find which board has a pending promotion owned by this player.
+    let seat = primarySeat(cs)!;
+    if (msg.boardId !== undefined) {
+      const s = ownedBoard(cs, msg.boardId as 0 | 1);
+      if (s !== null) seat = s;
+    } else {
+      // Auto-detect: find which of our boards has a pending promotion.
+      for (const s of cs.seats) {
+        if (room.game.boards[seatBoard(s)].pendingPromotion) {
+          seat = s;
+          break;
+        }
+      }
+    }
     const now = Date.now();
-    // Capture the originating pawn move before applying — `applyGamePromotion`
-    // clears `pendingPromotion`, so we can't read it afterwards.
     const boardId = seatBoard(seat);
     const pending = room.game.boards[boardId].pendingPromotion;
     try {
       const out = applyGamePromotion(room.game, seat, msg.diagonalSquare);
       const cm = this.clocks.get(room.code)!;
       cm.afterMove(room.game, seat, now, (s) => this.handleFlag(room, s));
-      // Atomic move-with-promotion event. `pending` is guaranteed to be set
-      // here because applyGamePromotion would have thrown otherwise.
       if (pending) {
         this.appendEvent(room, {
           kind: 'move',
@@ -434,10 +634,21 @@ export class ConnectionManager {
     }
   }
 
-  private handlePromotionCancel(cs: ClientState): void {
+  private handlePromotionCancel(cs: ClientState, msg?: { boardId?: number }): void {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
-    const seat = cs.seat!;
+    let seat = primarySeat(cs)!;
+    if (msg?.boardId !== undefined) {
+      const s = ownedBoard(cs, msg.boardId as 0 | 1);
+      if (s !== null) seat = s;
+    } else {
+      for (const s of cs.seats) {
+        if (room.game.boards[seatBoard(s)].pendingPromotion) {
+          seat = s;
+          break;
+        }
+      }
+    }
     try {
       cancelGamePromotion(room.game, seat);
       this.broadcastState(room);
@@ -450,7 +661,7 @@ export class ConnectionManager {
   private handleResign(cs: ClientState): void {
     if (!this.assertPlaying(cs)) return;
     const room = cs.room!;
-    const seat = cs.seat!;
+    const seat = primarySeat(cs)!;
     const now = Date.now();
     room.game.status = 'ended';
     room.game.result = {
@@ -465,11 +676,13 @@ export class ConnectionManager {
   }
 
   private handleRematch(cs: ClientState): void {
-    if (!cs.room || cs.seat === null) return;
+    if (!cs.room || cs.seats.length === 0) return;
     const room = cs.room;
     if (room.game.status !== 'ended') return;
 
-    room.game.rematchVotes[cs.seat] = true;
+    for (const seat of cs.seats) {
+      room.game.rematchVotes[seat] = true;
+    }
 
     const allVoted =
       room.slots.size === 4 &&
@@ -482,28 +695,19 @@ export class ConnectionManager {
     }
   }
 
-  // Drop the room back to the seating lobby. Unilateral: any seated player
-  // triggers this for everyone in the room (including spectators). Seats are
-  // preserved so partners who don't want to swap just hit Ready again; anyone
-  // who does want to move can release their seat from the lobby UI.
   private handleNewSeating(cs: ClientState): void {
-    if (!cs.room || cs.seat === null) return;
+    if (!cs.room || cs.seats.length === 0) return;
     const room = cs.room;
     if (room.game.status !== 'ended') return;
 
-    // Stop any clock activity from the just-finished game.
     this.clocks.get(room.code)?.stopAll();
     this.clocks.delete(room.code);
 
-    // Fresh game state, but stay in the lobby. Preserve the previously
-    // configured time control so players don't have to re-set it.
     const prevClockMs = room.game.initialClockMs;
     room.game = createGameState(room.code, Date.now(), prevClockMs);
     room.events = [];
     room.ratingChanges = null;
 
-    // Keep all existing seat assignments (names, playerIds, connected status)
-    // but mark everyone unready for the next game.
     for (const slot of room.slots.values()) {
       slot.ready = false;
     }
@@ -514,8 +718,6 @@ export class ConnectionManager {
   private startRematch(room: Room): void {
     const now = Date.now();
 
-    // Swap seats within each board: 0↔1 (Board 0), 2↔3 (Board 1).
-    // This keeps the same team matchup but flips colors on each board.
     const swapMap: Record<Seat, Seat> = { 0: 1, 1: 0, 2: 3, 3: 2 };
     const newSlots = new Map<Seat, import('../game/LobbyManager.js').PlayerSlot>();
     for (const [seat, slot] of room.slots) {
@@ -524,20 +726,20 @@ export class ConnectionManager {
     }
     room.slots = newSlots;
 
-    // Update seat on every active client connection.
+    // Swap simulTeams (team 0's players become team 1 and vice versa).
+    const prevSimul0 = room.simulTeams[0];
+    room.simulTeams[0] = room.simulTeams[1];
+    room.simulTeams[1] = prevSimul0;
+
     for (const [, cs] of this.clients) {
-      if (cs.room?.code === room.code && cs.seat !== null) {
-        cs.seat = swapMap[cs.seat];
+      if (cs.room?.code === room.code && cs.seats.length > 0) {
+        cs.seats = cs.seats.map((s) => swapMap[s]);
       }
     }
 
-    // Preserve series score across rematches. Seats swap (0↔1, 2↔3), so team
-    // numbers invert — swap the score so each player's team slot still reflects
-    // their own wins.
     const prevScore: [number, number] = [room.game.seriesScore[1], room.game.seriesScore[0]];
     const prevClockMs = room.game.initialClockMs;
 
-    // Replace game state with a fresh game, started immediately.
     room.game = createGameState(room.code, now, prevClockMs);
     room.game.seriesScore = prevScore;
     room.game.status = 'playing';
@@ -546,7 +748,6 @@ export class ConnectionManager {
     room.events = [];
     room.ratingChanges = null;
 
-    // Reset clock manager.
     this.clocks.get(room.code)?.stopAll();
     const cm = new ClockManager();
     this.clocks.set(room.code, cm);
@@ -556,21 +757,23 @@ export class ConnectionManager {
   }
 
   private handleChat(cs: ClientState, msg: { text: string }): void {
-    if (!cs.room || cs.seat === null) return;
+    if (!cs.room || cs.seats.length === 0) return;
     const text = msg.text.trim().slice(0, 200);
     if (!text) return;
-    const slot = cs.room.slots.get(cs.seat);
+    const seat = primarySeat(cs)!;
+    const slot = cs.room.slots.get(seat);
     if (!slot) return;
-    // Chat is partner-only: send only to the partner and the sender.
-    const partner = partnerOf(cs.seat);
+    const partner = partnerOf(seat);
+    // In simul mode the partner seat belongs to the same player — no one to chat with.
+    const partnerSlot = cs.room.slots.get(partner);
+    if (partnerSlot && partnerSlot.playerId === cs.playerId) return;
     const chatMsg: S_Chat = {
       type: 'chat',
-      fromSeat: cs.seat,
+      fromSeat: seat,
       fromName: slot.name,
       text,
     };
-    // Find partner's ws and send; also send to self.
-    this.sendToSeats(cs.room, [cs.seat, partner], chatMsg);
+    this.sendToSeats(cs.room, [seat, partner], chatMsg);
   }
 
   private handleFlag(room: Room, seat: Seat): void {
@@ -594,11 +797,8 @@ export class ConnectionManager {
   }
 
   private handleDisconnect(cs: ClientState): void {
-    const { room, seat } = cs;
-    if (!room || seat === null) return;
-    // this.clients still contains cs at this point (deleted after handleDisconnect returns).
-    // If another WebSocket for the same player is already alive (stale close event from
-    // a previous connection firing after a successful reconnect), skip the forfeit timer.
+    const { room, seats } = cs;
+    if (!room || seats.length === 0) return;
     const stillConnected = [...this.clients.values()].some(
       (other) => other !== cs && other.playerId === cs.playerId && other.room === room,
     );
@@ -609,8 +809,9 @@ export class ConnectionManager {
     }
     if (room.game.status === 'playing') {
       if (stillConnected) return;
-      this.lobby.handleDisconnect(room, seat, (r, s) => {
-        // 30s timeout: forfeit.
+      // For simul, trigger disconnect on the primary seat (timer fires per player).
+      const primarySeatVal = seats[0]!;
+      this.lobby.handleDisconnect(room, primarySeatVal, (r, s) => {
         if (r.game.status !== 'playing') return;
         const now = Date.now();
         r.game.status = 'ended';
@@ -625,14 +826,25 @@ export class ConnectionManager {
         this.broadcastState(r);
       });
     } else if (room.game.status === 'lobby') {
-      // In lobby: just remove the slot so someone else can take the seat.
-      room.slots.delete(seat);
+      const wasOwner = cs.playerId === room.ownerPlayerId;
+      for (const seat of seats) room.slots.delete(seat);
+      // Clear simul flags if all seats of a team are gone.
+      for (const t of [0, 1] as (0 | 1)[]) {
+        if (room.simulTeams[t]) {
+          const [s0, s1] = t === 0 ? [0, 2] : [1, 3];
+          if (!room.slots.has(s0 as Seat) && !room.slots.has(s1 as Seat)) {
+            room.simulTeams[t] = false;
+          }
+        }
+      }
+      cs.seats = [];
+      if (wasOwner) this.lobby.transferOwnership(room);
     }
     this.broadcastState(room);
   }
 
   private assertPlaying(cs: ClientState): boolean {
-    if (!cs.room || cs.seat === null) {
+    if (!cs.room || cs.seats.length === 0) {
       this.send(cs.ws, { type: 'error', reason: 'no-seat' });
       return false;
     }
@@ -647,11 +859,13 @@ export class ConnectionManager {
     const slotInfo = (s: Seat): SeatInfo | null => {
       const slot = room.slots.get(s);
       if (!slot) return null;
-      return { name: slot.name, rating: null, isGuest: slot.userId === null };
+      return { name: slot.name, rating: slot.rating, isGuest: slot.userId === null };
     };
 
-    const stateBase: Omit<S_State, 'yourSeat'> = {
-      type: 'state',
+    const ownerSeat = this.lobby.getOwnerSeat(room);
+
+    const stateBase = {
+      type: 'state' as const,
       game: room.game,
       names: { 0: slotInfo(0), 1: slotInfo(1), 2: slotInfo(2), 3: slotInfo(3) },
       ready: {
@@ -670,11 +884,15 @@ export class ConnectionManager {
       isPrivate: room.isPrivate,
       isRated: room.isRated,
       ratingChanges: room.ratingChanges ?? null,
+      ownerSeat,
+      ratingRange: room.ratingRange,
+      simulTeams: room.simulTeams,
+      allowSimul: room.allowSimul,
     };
-    // Send personalised copy to each client.
     for (const [ws, cs] of this.clients) {
       if (cs.room?.code !== room.code) continue;
-      const msg: S_State = { ...stateBase, yourSeat: cs.seat };
+      const yourSeats = cs.seats;
+      const msg = { ...stateBase, yourSeat: yourSeats[0] ?? null, yourSeats } as S_State;
       this.send(ws, msg);
     }
   }
@@ -682,7 +900,7 @@ export class ConnectionManager {
   private sendToSeats(room: Room, seats: Seat[], msg: ServerMessage): void {
     const seatSet = new Set(seats);
     for (const [ws, cs] of this.clients) {
-      if (cs.room?.code === room.code && cs.seat !== null && seatSet.has(cs.seat)) {
+      if (cs.room?.code === room.code && cs.seats.some((s) => seatSet.has(s))) {
         this.send(ws, msg);
       }
     }
@@ -695,9 +913,6 @@ export class ConnectionManager {
   }
 }
 
-// Filter for which finished games are worth keeping. Tunable as the product
-// matures; current rules: at least 10 logged actions and at least one on each
-// board (rules out cases where one team never moved).
 function shouldPersist(room: Room): boolean {
   if (room.events.length < 10) return false;
   let hasB0 = false, hasB1 = false;
@@ -709,9 +924,6 @@ function shouldPersist(room: Room): boolean {
   return false;
 }
 
-// Snapshot whatever names sit in the room's slots right now. Stored on the
-// SavedGameRecord so post-game roster shuffles (release-seat / new-seating
-// substitutes) don't rewrite history.
 function snapshotPlayerNames(room: Room): Record<Seat, string> {
   return {
     0: room.slots.get(0)?.name ?? '?',

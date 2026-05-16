@@ -21,6 +21,7 @@ function makeRecord(overrides: Partial<SavedGameRecord> = {}): SavedGameRecord {
       { kind: 'move', seq: 1, ts: 1100, boardId: 0, seat: 0, from: 12, to: 28 },
       { kind: 'move', seq: 2, ts: 1200, boardId: 0, seat: 1, from: 52, to: 36 },
     ],
+    simulTeams: { 0: false, 1: false },
     ...overrides,
   };
 }

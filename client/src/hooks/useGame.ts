@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameSocket } from '../lib/ws.js';
-import { S_State, S_Chat, Seat, ClientMessage } from '@bughouse/shared';
+import { S_State, S_Chat, ClientMessage } from '@bughouse/shared';
 
 export type GameStore = S_State & {
   errors: string[];
@@ -11,6 +11,9 @@ const EMPTY: GameStore = {
   type: 'state',
   game: null as any,
   yourSeat: null,
+  yourSeats: [] as any,
+  simulTeams: { 0: false, 1: false } as any,
+  allowSimul: false as any,
   names: { 0: null, 1: null, 2: null, 3: null },
   ready: { 0: false, 1: false, 2: false, 3: false },
   connected: { 0: false, 1: false, 2: false, 3: false },
@@ -18,6 +21,8 @@ const EMPTY: GameStore = {
   isPrivate: false,
   isRated: true,
   ratingChanges: null,
+  ownerSeat: null,
+  ratingRange: null,
   errors: [],
   chatMessages: [],
 };

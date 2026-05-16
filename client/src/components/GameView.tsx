@@ -30,7 +30,7 @@ import { legalMoves, pseudoLegalMoves } from '../lib/legalMoves.js';
 import { COLOR_SCHEMES, ColorScheme, loadScheme, saveScheme } from '../themes.js';
 import { PIECE_SETS, PieceSet, loadPieceSet, savePieceSet } from '../pieceSets.js';
 import { useGameSounds } from '../hooks/useGameSounds.js';
-import { SOUND_SETS, SoundSetKey, loadSoundSet, saveSoundSet, previewSoundSet } from '../sounds.js';
+import { SOUND_SETS, SoundSetKey, loadSoundSet, saveSoundSet, previewSoundSet, loadMuted, saveMuted } from '../sounds.js';
 
 type Props = {
   store: GameStore;
@@ -39,6 +39,36 @@ type Props = {
   onProfile?: () => void;
   auth?: { user: { id: string; username?: string } | null };
 };
+
+function RotateButton({ flipped, onClick }: { flipped: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Rotate board"
+      style={{
+        width: 24, height: 24,
+        background: flipped ? 'rgba(255,255,255,0.1)' : 'transparent',
+        border: '1px solid rgba(255,255,255,0.12)',
+        borderRadius: 5, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: flipped ? '#fff' : 'rgba(255,255,255,0.4)',
+        transition: 'all 120ms',
+        padding: 0, flexShrink: 0,
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.3)'; e.currentTarget.style.color = '#fff'; }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)';
+        e.currentTarget.style.color = flipped ? '#fff' : 'rgba(255,255,255,0.4)';
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+        style={{ transform: flipped ? 'scaleX(-1)' : 'none', transition: 'transform 200ms' }}>
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+        <path d="M3 3v5h5"/>
+      </svg>
+    </button>
+  );
+}
 
 function SectionLabel({ text, accent }: { text: string; accent: string }) {
   return (
@@ -66,6 +96,8 @@ function ThemePicker({
   onPieceSetChange,
   currentSoundSet,
   onSoundSetChange,
+  muted,
+  onMuteToggle,
 }: {
   current: ColorScheme;
   onChange: (s: ColorScheme) => void;
@@ -73,6 +105,8 @@ function ThemePicker({
   onPieceSetChange: (s: PieceSet) => void;
   currentSoundSet: SoundSetKey;
   onSoundSetChange: (k: SoundSetKey) => void;
+  muted: boolean;
+  onMuteToggle: () => void;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -232,18 +266,55 @@ function ThemePicker({
 
             {/* ── Sounds ── */}
             <div style={{
-              fontFamily: "'JetBrains Mono', monospace",
-              fontSize: 9, color: 'rgba(255,255,255,0.35)',
-              letterSpacing: 1.2, textTransform: 'uppercase',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               marginBottom: 10,
-            }}>Sound</div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            }}>
+              <div style={{
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 9, color: 'rgba(255,255,255,0.35)',
+                letterSpacing: 1.2, textTransform: 'uppercase',
+              }}>Sound</div>
+              <button
+                onClick={onMuteToggle}
+                title={muted ? 'Unmute sounds' : 'Mute sounds'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px',
+                  borderRadius: 6,
+                  border: muted ? '1.5px solid rgba(248,113,113,0.5)' : '1.5px solid rgba(255,255,255,0.1)',
+                  background: muted ? 'rgba(248,113,113,0.08)' : 'rgba(255,255,255,0.03)',
+                  color: muted ? '#f87171' : 'rgba(255,255,255,0.45)',
+                  cursor: 'pointer',
+                  fontFamily: "'Geist', 'Inter', sans-serif",
+                  fontSize: 11, fontWeight: 600,
+                  transition: 'all 120ms',
+                }}
+              >
+                {muted ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                    <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"/>
+                    <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"/>
+                    <line x1="12" y1="19" x2="12" y2="23"/>
+                    <line x1="8" y1="23" x2="16" y2="23"/>
+                  </svg>
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                  </svg>
+                )}
+                {muted ? 'Muted' : 'Mute'}
+              </button>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', opacity: muted ? 0.35 : 1, transition: 'opacity 120ms' }}>
               {SOUND_SETS.map(({ key, label }) => {
                 const isActive = key === currentSoundSet;
                 return (
                   <button
                     key={key}
-                    onClick={() => { onSoundSetChange(key); previewSoundSet(key); }}
+                    onClick={() => { if (!muted) { onSoundSetChange(key); previewSoundSet(key); } }}
                     style={{
                       padding: '7px 14px',
                       borderRadius: 7,
@@ -254,7 +325,7 @@ function ThemePicker({
                         ? 'rgba(86,219,211,0.08)'
                         : 'rgba(255,255,255,0.03)',
                       color: isActive ? '#56dbd3' : 'rgba(255,255,255,0.55)',
-                      cursor: 'pointer',
+                      cursor: muted ? 'default' : 'pointer',
                       fontFamily: "'Geist', 'Inter', sans-serif",
                       fontSize: 12,
                       fontWeight: isActive ? 600 : 400,
@@ -283,7 +354,11 @@ function GameHeader({
   pieceSet,
   onPieceSet,
   soundSet,
+  rotated,
+  onRotate,
   onSoundSet,
+  muted,
+  onMuteToggle,
   onHome,
   username,
   onProfile,
@@ -297,6 +372,10 @@ function GameHeader({
   onPieceSet: (s: PieceSet) => void;
   soundSet: SoundSetKey;
   onSoundSet: (k: SoundSetKey) => void;
+  muted: boolean;
+  onMuteToggle: () => void;
+  rotated: boolean;
+  onRotate: () => void;
   onHome?: () => void;
   username?: string;
   onProfile?: () => void;
@@ -351,6 +430,7 @@ function GameHeader({
       {/* Actions + profile */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <RotateButton flipped={rotated} onClick={onRotate} />
           <ThemePicker
             current={colorScheme}
             onChange={onColorScheme}
@@ -358,6 +438,8 @@ function GameHeader({
             onPieceSetChange={onPieceSet}
             currentSoundSet={soundSet}
             onSoundSetChange={onSoundSet}
+            muted={muted}
+            onMuteToggle={onMuteToggle}
           />
           {canResign && (
             <button
@@ -438,14 +520,26 @@ function useBoardLayout() {
 
 export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   const { game, yourSeat } = store;
+  const yourSeats: Seat[] = (store as any).yourSeats ?? (yourSeat !== null ? [yourSeat] : []);
+  const simulTeams: { 0: boolean; 1: boolean } = (store as any).simulTeams ?? { 0: false, 1: false };
+  const isSimul = yourSeats.length === 2;
+
+  // Returns the seat this client owns on the given board, or null.
+  const ownsBoard = (boardId: BoardId): Seat | null =>
+    yourSeats.find((s) => seatBoard(s) === boardId) ?? null;
 
   // Derived early so they can be used in hooks below.
   const myBoardIdEarly = yourSeat !== null ? seatBoard(yourSeat) : null;
   const ownBoardId: BoardId = myBoardIdEarly ?? 0;
   const partnerBoardId: BoardId = (1 - ownBoardId) as BoardId;
 
+  // Chat is hidden when the simul player has no partner.
+  const myTeam = yourSeat !== null ? (yourSeat % 2 as 0 | 1) : null;
+  const showChat = myTeam === null || !simulTeams[myTeam];
+
   const [soundSet, setSoundSet] = useState<SoundSetKey>(loadSoundSet);
-  useGameSounds(game, yourSeat, soundSet);
+  const [muted, setMuted] = useState<boolean>(loadMuted);
+  useGameSounds(game, yourSeat, soundSet, muted);
   const [colorScheme, setColorScheme] = useState<ColorScheme>(loadScheme);
   const [pieceSet, setPieceSet] = useState<PieceSet>(loadPieceSet);
   const { cellSize, chatWidth } = useBoardLayout();
@@ -465,8 +559,13 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
     saveSoundSet(k);
   }, []);
 
+  const handleMuteToggle = useCallback(() => {
+    setMuted((m) => { saveMuted(!m); return !m; });
+  }, []);
+
   // Review mode: null = live, n = viewing after the nth own-board move.
   const [reviewPos, setReviewPos] = useState<number | null>(null);
+  const [rotated, setRotated] = useState(false);
 
   // Reset review when a new game starts (events cleared on rematch).
   useEffect(() => {
@@ -541,24 +640,42 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   // Board/hand state to render — live game or historical replay.
   const displayGame = reviewPos !== null && viewGame !== null ? viewGame : game;
 
+  // Track which board the currently selected hand piece belongs to (for cross-board clearing).
   const [selectedPiece, setSelectedPiece] = useState<DropPieceType | null>(null);
+  const [selectedPieceBoardId, setSelectedPieceBoardId] = useState<BoardId | null>(null);
   const [draggedHandPiece, setDraggedHandPiece] = useState<DropPieceType | null>(null);
   const [handDragPos, setHandDragPos] = useState<{ x: number; y: number } | null>(null);
   const handDragCleanupRef = useRef<(() => void) | null>(null);
   const [premove, setPremove] = useState<PremoveState | null>(null);
+  // Tracks which board the queued premove belongs to. A premove is always
+  // for one specific board, so we fire it only when it's our turn on that board.
+  const [premovedBoardId, setPremovedBoardId] = useState<BoardId | null>(null);
+
+  const setPremoveForBoard = useCallback((state: PremoveState | null, boardId: BoardId | null) => {
+    setPremove(state);
+    setPremovedBoardId(boardId);
+  }, []);
+
+  const selectHandPiece = useCallback((piece: DropPieceType | null, boardId: BoardId) => {
+    setSelectedPiece(piece);
+    setSelectedPieceBoardId(piece !== null ? boardId : null);
+    setPremoveForBoard(null, null);
+  }, [setPremoveForBoard]);
 
   const isYourTurn = useCallback((boardId: BoardId): boolean => {
-    if (!game || yourSeat === null) return false;
-    if (seatBoard(yourSeat) !== boardId) return false;
+    const seat = ownsBoard(boardId);
+    if (!game || seat === null) return false;
     const board = game.boards[boardId];
-    if (board.pendingPromotion) return board.pendingPromotion.color === seatColor(yourSeat);
-    return board.turn === seatColor(yourSeat);
-  }, [game, yourSeat]);
+    if (board.pendingPromotion) return board.pendingPromotion.color === seatColor(seat);
+    return board.turn === seatColor(seat);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, yourSeat, yourSeats]);
 
   const getMoveLegalTargets = useCallback((boardId: BoardId, fromSq: Square): Set<Square> => {
-    if (!game || yourSeat === null || !isYourTurn(boardId)) return new Set();
+    const seat = ownsBoard(boardId);
+    if (!game || seat === null || !isYourTurn(boardId)) return new Set();
     const board = game.boards[boardId];
-    const color = seatColor(yourSeat);
+    const color = seatColor(seat);
     const piece = board.board[fromSq];
     if (!piece || piece.color !== color) return new Set();
     return new Set(
@@ -566,10 +683,11 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
         .filter((m) => m.from === fromSq)
         .map((m) => m.to),
     );
-  }, [game, yourSeat, isYourTurn]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, yourSeat, yourSeats, isYourTurn]);
 
   const getDropTargets = useCallback((boardId: BoardId, piece: DropPieceType): Set<Square> => {
-    if (!game || yourSeat === null || !isYourTurn(boardId)) return new Set();
+    if (!game || ownsBoard(boardId) === null || !isYourTurn(boardId)) return new Set();
     const board = game.boards[boardId];
     const out = new Set<Square>();
     for (let s = 0; s < 64; s++) {
@@ -581,7 +699,8 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       out.add(s);
     }
     return out;
-  }, [game, yourSeat, isYourTurn]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, yourSeat, yourSeats, isYourTurn]);
 
   const getPremoveDropTargets = useCallback((piece: DropPieceType): Set<Square> => {
     const out = new Set<Square>();
@@ -596,8 +715,9 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   }, []);
 
   const getPremoveTargets = useCallback((boardId: BoardId, fromSq: Square): Set<Square> => {
-    if (!game || yourSeat === null) return new Set();
-    const myColor = seatColor(yourSeat);
+    const seat = ownsBoard(boardId);
+    if (!game || seat === null) return new Set();
+    const myColor = seatColor(seat);
     const boardState = game.boards[boardId];
     const piece = boardState.board[fromSq];
     if (!piece || piece.color !== myColor) return new Set();
@@ -617,26 +737,30 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       }
     }
     return targets;
-  }, [game, yourSeat]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, yourSeat, yourSeats]);
 
   useEffect(() => {
-    if (!game || yourSeat === null || !premove) return;
-    if (game.status !== 'playing') { setPremove(null); return; }
-    const boardId = seatBoard(yourSeat);
-    const board = game.boards[boardId];
+    if (!game || !premove || premovedBoardId === null) return;
+    if (game.status !== 'playing') { setPremoveForBoard(null, null); return; }
+    const seat = ownsBoard(premovedBoardId);
+    if (seat === null) { setPremoveForBoard(null, null); return; }
+    const board = game.boards[premovedBoardId];
     if (board.pendingPromotion) return;
-    if (board.turn !== seatColor(yourSeat)) return;
+    if (board.turn !== seatColor(seat)) return;
     if (premove.type === 'move') {
-      send({ type: 'move', boardId, from: premove.from, to: premove.to });
+      send({ type: 'move', boardId: premovedBoardId, from: premove.from, to: premove.to });
     } else {
-      send({ type: 'drop', boardId, piece: premove.piece, to: premove.to });
+      send({ type: 'drop', boardId: premovedBoardId, piece: premove.piece, to: premove.to });
     }
-    setPremove(null);
-  }, [game, yourSeat, premove, send]);
+    setPremoveForBoard(null, null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game, yourSeat, yourSeats, premove, premovedBoardId, send]);
 
   const handleMove = useCallback((boardId: BoardId, from: Square, to: Square) => {
     send({ type: 'move', boardId, from, to });
     setSelectedPiece(null);
+    setSelectedPieceBoardId(null);
   }, [send]);
 
   const handleDrop = useCallback((boardId: BoardId, to: Square) => {
@@ -644,6 +768,7 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
     if (piece === null) return;
     send({ type: 'drop', boardId, piece, to });
     setSelectedPiece(null);
+    setSelectedPieceBoardId(null);
     setDraggedHandPiece(null);
   }, [send, selectedPiece, draggedHandPiece]);
 
@@ -656,9 +781,11 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
 
     setDraggedHandPiece(piece);
     setSelectedPiece(null);
-    setPremove(null);
+    setPremoveForBoard(null, null);
 
-    const boardId = yourSeat !== null ? seatBoard(yourSeat) : null;
+    // For simul, determine which board the dragged piece came from via selectedPieceBoardId;
+    // fall back to the primary seat's board for single-seat players.
+    const dragBoardId: BoardId | null = selectedPieceBoardId ?? (yourSeat !== null ? seatBoard(yourSeat) : null);
 
     const onMove = (e: PointerEvent) => {
       setHandDragPos({ x: e.clientX, y: e.clientY });
@@ -670,13 +797,17 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       setDraggedHandPiece(null);
       setHandDragPos(null);
 
-      if (boardId === null) return;
+      if (dragBoardId === null) return;
       const el = document.elementFromPoint(e.clientX, e.clientY);
       const squareEl = (el as HTMLElement | null)?.closest('[data-square]') as HTMLElement | null;
       if (!squareEl) return;
       const toSq = parseInt(squareEl.dataset.square ?? '');
       if (!isNaN(toSq)) {
-        send({ type: 'drop', boardId, piece, to: toSq });
+        if (isYourTurn(dragBoardId)) {
+          send({ type: 'drop', boardId: dragBoardId, piece, to: toSq });
+        } else {
+          setPremoveForBoard({ type: 'drop', piece, to: toSq }, dragBoardId);
+        }
       }
     };
 
@@ -686,7 +817,7 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
     };
-  }, [yourSeat, send]);
+  }, [yourSeat, selectedPieceBoardId, setPremoveForBoard, send, isYourTurn]);
 
   // Clean up lingering hand-drag listeners on unmount
   useEffect(() => () => { handDragCleanupRef.current?.(); }, []);
@@ -729,16 +860,23 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
     );
   }
 
-  const myBoardId = yourSeat !== null ? seatBoard(yourSeat) : null;
-  const inPromoMode = yourSeat !== null && myBoardId !== null &&
-    game.boards[myBoardId].pendingPromotion?.color === seatColor(yourSeat);
+  // For simul: find which of our boards has a pending promotion (if any).
+  const promoSeat = yourSeats.find((s) => {
+    const bId = seatBoard(s);
+    const pp = game.boards[bId].pendingPromotion;
+    return pp && pp.color === seatColor(s);
+  }) ?? null;
+  const myBoardId = promoSeat !== null ? seatBoard(promoSeat) : (yourSeat !== null ? seatBoard(yourSeat) : null);
+  const inPromoMode = promoSeat !== null || (yourSeat !== null && myBoardId !== null &&
+    game.boards[myBoardId].pendingPromotion?.color === seatColor(yourSeat));
 
-  const diagBoardId = yourSeat !== null ? seatBoard(diagonalOf(yourSeat)) : null;
-  const diagColor = yourSeat !== null ? seatColor(diagonalOf(yourSeat)) : null;
+  const activeSeatForPromo = promoSeat ?? yourSeat;
+  const diagBoardId = activeSeatForPromo !== null ? seatBoard(diagonalOf(activeSeatForPromo)) : null;
+  const diagColor = activeSeatForPromo !== null ? seatColor(diagonalOf(activeSeatForPromo)) : null;
 
   function buildBoardInteraction(boardId: BoardId): BoardInteraction | null {
-    if (!game || yourSeat === null) return null;
-    if (reviewPos !== null) return null; // no interaction in review mode
+    if (!game || yourSeats.length === 0) return null;
+    if (reviewPos !== null) return null;
     if (game.status !== 'playing') return null;
 
     if (inPromoMode && boardId === myBoardId) return null;
@@ -749,9 +887,15 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       return { mode: 'promotion-pick', onPick: handlePromoSelect, onCancel: handlePromoCancel, validSquares };
     }
 
-    if (seatBoard(yourSeat) !== boardId) return null;
+    // For simul: if the other board has pending promotion, block interaction on this board too.
+    if (inPromoMode && ownsBoard(boardId) !== null) return null;
 
-    const activePiece = selectedPiece ?? draggedHandPiece;
+    const ownedSeat = ownsBoard(boardId);
+    if (ownedSeat === null) return null;
+
+    // Cross-board selection clear: if the selectedPiece was selected from the OTHER board,
+    // treat it as null here so the user gets a fresh "move" interaction on this board.
+    const activePiece = (selectedPieceBoardId === boardId ? selectedPiece : null) ?? draggedHandPiece;
 
     if (!isYourTurn(boardId)) {
       if (game.boards[boardId].pendingPromotion) return null;
@@ -761,18 +905,19 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
           piece: activePiece,
           dropTargets: getPremoveDropTargets(activePiece),
           onDrop: (to) => {
-            setPremove({ type: 'drop', piece: activePiece, to });
+            setPremoveForBoard({ type: 'drop', piece: activePiece, to }, boardId);
             setSelectedPiece(null);
+            setSelectedPieceBoardId(null);
             setDraggedHandPiece(null);
           },
-          onCancel: () => { setSelectedPiece(null); setDraggedHandPiece(null); },
+          onCancel: () => { setSelectedPiece(null); setSelectedPieceBoardId(null); setDraggedHandPiece(null); },
           getMoveTargets: (from) => getPremoveTargets(boardId, from),
-          onMove: (from, to) => { setPremove({ type: 'move', from, to }); setSelectedPiece(null); setDraggedHandPiece(null); },
+          onMove: (from, to) => { setPremoveForBoard({ type: 'move', from, to }, boardId); setSelectedPiece(null); setSelectedPieceBoardId(null); setDraggedHandPiece(null); },
         };
       }
       return {
         mode: 'move',
-        onMove: (from, to) => setPremove({ type: 'move', from, to }),
+        onMove: (from, to) => setPremoveForBoard({ type: 'move', from, to }, boardId),
         getTargets: (from) => getPremoveTargets(boardId, from),
       };
     }
@@ -783,9 +928,9 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
         piece: activePiece,
         dropTargets: getDropTargets(boardId, activePiece),
         onDrop: (to) => handleDrop(boardId, to),
-        onCancel: () => { setSelectedPiece(null); setDraggedHandPiece(null); },
+        onCancel: () => { setSelectedPiece(null); setSelectedPieceBoardId(null); setDraggedHandPiece(null); },
         getMoveTargets: (from) => getMoveLegalTargets(boardId, from),
-        onMove: (from, to) => { handleMove(boardId, from, to); setSelectedPiece(null); setDraggedHandPiece(null); },
+        onMove: (from, to) => { handleMove(boardId, from, to); setSelectedPiece(null); setSelectedPieceBoardId(null); setDraggedHandPiece(null); },
       };
     }
     return {
@@ -796,13 +941,15 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
   }
 
   function boardPerspective(boardId: BoardId): Color {
+    let base: Color;
     if (yourSeat === null) {
-      // Observers: Board 0 shows white on bottom, Board 1 shows black on bottom.
-      // This puts the same team (seats 0 and 2) at the bottom of each board.
-      return boardId === 0 ? 'w' : 'b';
+      base = boardId === 0 ? 'w' : 'b';
+    } else if (seatBoard(yourSeat) === boardId) {
+      base = seatColor(yourSeat);
+    } else {
+      base = seatColor((yourSeat + 2) % 4 as Seat);
     }
-    if (seatBoard(yourSeat) === boardId) return seatColor(yourSeat);
-    return seatColor((yourSeat + 2) % 4 as Seat);
+    return rotated ? (base === 'w' ? 'b' : 'w') : base;
   }
 
   function buildBoardEl(boardId: BoardId, cellSize: number, large = false) {
@@ -815,24 +962,27 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
 
     const interaction = buildBoardInteraction(boardId);
     const pendingPromoSq = reviewPos === null ? (board.pendingPromotion?.to ?? null) : null;
-    const isMyBoard = yourSeat !== null && seatBoard(yourSeat) === boardId;
-    const handSeat = isMyBoard ? yourSeat! : botSeat;
-    const isMyHand = isMyBoard && yourSeat !== null;
+    const ownedSeat = ownsBoard(boardId);
+    const isMyBoard = ownedSeat !== null;
+    const handSeat = ownedSeat ?? botSeat;
+    const isMyHand = isMyBoard;
 
-    const hotkeyDrop = isMyBoard && yourSeat !== null && reviewPos === null && game!.status === 'playing' && !inPromoMode
+    const hotkeyDrop = isMyBoard && ownedSeat !== null && reviewPos === null && game!.status === 'playing' && !inPromoMode
       ? (piece: DropPieceType, to: Square) => {
-          const hand = game!.hands[yourSeat!];
+          const hand = game!.hands[ownedSeat];
           if (!hand[piece] || hand[piece] <= 0) return;
           if (isYourTurn(boardId)) {
             const targets = getDropTargets(boardId, piece);
             if (!targets.has(to)) return;
             send({ type: 'drop', boardId, piece, to });
             setSelectedPiece(null);
+            setSelectedPieceBoardId(null);
           } else {
             const targets = getPremoveDropTargets(piece);
             if (!targets.has(to)) return;
-            setPremove({ type: 'drop', piece, to });
+            setPremoveForBoard({ type: 'drop', piece, to }, boardId);
             setSelectedPiece(null);
+            setSelectedPieceBoardId(null);
           }
         }
       : undefined;
@@ -846,7 +996,7 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {/* Top player card */}
         <div style={{ ...stripStyle, borderRadius: 8 }}>
-          <PlayerStrip seat={topSeat} store={store} isYou={yourSeat === topSeat} position="top" large={large} />
+          <PlayerStrip seat={topSeat} store={store} isYou={yourSeats.includes(topSeat)} position="top" large={large} />
           <HandPanel
             hand={displayGame!.hands[topSeat]}
             color={seatColor(topSeat)}
@@ -866,8 +1016,8 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
           interaction={interaction}
           pendingPromoSquare={pendingPromoSq}
           promotionPickColor={reviewPos === null && inPromoMode && boardId === diagBoardId ? diagColor! : undefined}
-          premove={reviewPos === null && yourSeat !== null && seatBoard(yourSeat) === boardId ? premove : null}
-          onCancelPremove={reviewPos === null && yourSeat !== null && seatBoard(yourSeat) === boardId ? () => setPremove(null) : undefined}
+          premove={reviewPos === null && isMyBoard && premovedBoardId === boardId ? premove : null}
+          onCancelPremove={reviewPos === null && isMyBoard ? () => setPremoveForBoard(null, null) : undefined}
           cellSize={cellSize}
           colorScheme={colorScheme}
           pieceSet={pieceSet}
@@ -880,8 +1030,8 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
           <HandPanel
             hand={displayGame!.hands[handSeat]}
             color={seatColor(handSeat)}
-            selectedPiece={isMyHand && reviewPos === null ? selectedPiece : null}
-            onSelect={isMyHand && reviewPos === null ? (p) => { setSelectedPiece(p); setPremove(null); } : () => {}}
+            selectedPiece={isMyHand && reviewPos === null && selectedPieceBoardId === boardId ? selectedPiece : null}
+            onSelect={isMyHand && reviewPos === null ? (p) => selectHandPiece(p, boardId) : () => {}}
             canInteract={isMyHand && reviewPos === null && isYourTurn(boardId) && !inPromoMode}
             canDrag={isMyHand && reviewPos === null && game!.status === 'playing' && !inPromoMode}
             onDragStart={isMyHand ? handleHandDragStart : undefined}
@@ -891,14 +1041,14 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
             colorScheme={colorScheme}
             pieceSet={pieceSet}
           />
-          <PlayerStrip seat={botSeat} store={store} isYou={yourSeat === botSeat} position="bottom" large={large} />
+          <PlayerStrip seat={botSeat} store={store} isYou={yourSeats.includes(botSeat)} position="bottom" large={large} />
         </div>
       </div>
     );
   }
 
   const isEnded = game.status === 'ended' && game.result;
-  const isWin = isEnded && yourSeat !== null && yourSeat % 2 === game.result!.winningTeam;
+  const isWin = isEnded && yourSeats.length > 0 && yourSeats[0]! % 2 === game.result!.winningTeam;
 
   const REASON_LABEL: Record<string, string> = {
     'king-capture': 'King captured',
@@ -933,6 +1083,10 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
         onPieceSet={handlePieceSet}
         soundSet={soundSet}
         onSoundSet={handleSoundSet}
+        muted={muted}
+        onMuteToggle={handleMuteToggle}
+        rotated={rotated}
+        onRotate={() => setRotated((r) => !r)}
         onHome={onHome}
         username={auth?.user?.username}
         onProfile={onProfile}
@@ -952,25 +1106,27 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
       }}>
         {/* My board column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-          <SectionLabel text="MY BOARD" accent="#56dbd3" />
+          <SectionLabel text={isSimul ? 'BOARD 1' : 'MY BOARD'} accent="#56dbd3" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {buildBoardEl(ownBoardId, cellSize, true)}
           </div>
         </div>
 
-        {/* Chat column (between boards) */}
+        {/* Chat / center column */}
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 8,
           alignItems: 'stretch',
-          width: chatWidth,
+          width: Math.max(chatWidth, 300),
           marginTop: 28,
         }}>
-          <ChatPanel
-            messages={store.chatMessages}
-            onSend={handleSendChat}
-            canSend={yourSeat !== null && game.status === 'playing'}
-            height={Math.max(300, Math.min(480, Math.round(cellSize * 5.5)))}
-          />
+          {showChat && (
+            <ChatPanel
+              messages={store.chatMessages}
+              onSend={handleSendChat}
+              canSend={yourSeat !== null && game.status === 'playing'}
+              height={Math.max(300, Math.min(480, Math.round(cellSize * 5.5)))}
+            />
+          )}
 
           <NotationPanel
             events={store.events}
@@ -1146,7 +1302,7 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
 
         {/* Partner board column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-          <SectionLabel text="PARTNER BOARD" accent="#a78bfa" />
+          <SectionLabel text={isSimul ? 'BOARD 2' : 'PARTNER BOARD'} accent="#a78bfa" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
             {buildBoardEl(partnerBoardId, cellSize, true)}
           </div>

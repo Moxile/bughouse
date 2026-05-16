@@ -4,6 +4,7 @@ export type AuthUser = {
   displayName: string;
   rating: number;
   ratingGamesPlayed: number;
+  usernameSet: boolean;
 };
 
 export type AuthMeResponse = {

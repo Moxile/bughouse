@@ -45,7 +45,7 @@ export async function handleAuthRoutes(
     const user = await resolveSession(req, db);
     json(res, 200, {
       user: user
-        ? { id: user.id, username: user.username, displayName: user.displayName, rating: user.rating, ratingGamesPlayed: user.ratingGamesPlayed }
+        ? { id: user.id, username: user.username, displayName: user.displayName, rating: user.rating, ratingGamesPlayed: user.ratingGamesPlayed, simulRating: user.simulRating, simulRatingGamesPlayed: user.simulRatingGamesPlayed, usernameSet: user.usernameSet }
         : null,
     });
     return true;
@@ -126,11 +126,46 @@ export async function handleAuthRoutes(
     return true;
   }
 
+  // GET /api/users/by-username/:username — public profile (no display name / email)
+  const byUsernameMatch = pathname.match(/^\/api\/users\/by-username\/([^/]+)$/);
+  if (method === 'GET' && byUsernameMatch) {
+    const profile = await db.getPublicProfile(byUsernameMatch[1]!);
+    if (!profile) { json(res, 404, { error: 'not-found' }); return true; }
+    json(res, 200, profile);
+    return true;
+  }
+
   // GET /api/users/:id/rating-history
   const histMatch = pathname.match(/^\/api\/users\/([^/]+)\/rating-history$/);
   if (method === 'GET' && histMatch) {
     const history = await db.getRatingHistory(histMatch[1]!, 50);
     json(res, 200, history);
+    return true;
+  }
+
+  // GET /api/users/:username/games?limit=20&before=<ms>&rated=true&sinceDays=7
+  const userGamesMatch = pathname.match(/^\/api\/users\/([^/]+)\/games$/);
+  if (method === 'GET' && userGamesMatch) {
+    const profile = await db.getPublicProfile(userGamesMatch[1]!);
+    if (!profile) { json(res, 404, { error: 'not-found' }); return true; }
+    const limitParam = parseInt(url.searchParams.get('limit') ?? '20', 10);
+    const limit = isNaN(limitParam) ? 20 : Math.min(limitParam, 50);
+    const beforeParam = url.searchParams.get('before');
+    const before = beforeParam ? parseInt(beforeParam, 10) : undefined;
+    const ratedOnly = url.searchParams.get('rated') === 'true';
+    const sinceDaysParam = url.searchParams.get('sinceDays');
+    const sinceDays = sinceDaysParam ? parseInt(sinceDaysParam, 10) : undefined;
+    const games = await db.getGamesForUser(profile.id, { limit, before, ratedOnly, sinceDays });
+    json(res, 200, { games, hasMore: games.length === limit });
+    return true;
+  }
+
+  // GET /api/games/:gameId — full saved game for replay
+  const gameDetailMatch = pathname.match(/^\/api\/games\/([0-9a-f-]{36})$/i);
+  if (method === 'GET' && gameDetailMatch) {
+    const detail = await db.getGameDetail(gameDetailMatch[1]!);
+    if (!detail) { json(res, 404, { error: 'not-found' }); return true; }
+    json(res, 200, detail);
     return true;
   }
 

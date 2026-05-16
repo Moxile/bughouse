@@ -86,7 +86,7 @@ export function LeaderboardPage({ onHome, onProfile, username }: Props) {
           onClick={() => history.back()}
           style={{
             marginTop: 8, padding: '11px 28px',
-            background: 'linear-gradient(135deg, #56dbd3 0%, #a78bfa 100%)',
+            background: 'linear-gradient(135deg, #56dbd3 0%, #3bb8b0 100%)',
             color: '#0a0c10', border: 'none', borderRadius: 8,
             fontSize: 14, cursor: 'pointer', fontWeight: 800,
             letterSpacing: 0.3,

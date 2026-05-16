@@ -14,6 +14,7 @@ export function useGameSounds(
   game: GameState | null,
   yourSeat: Seat | null,
   soundSet: SoundSetKey,
+  muted: boolean,
 ) {
   const acRef = useRef<AudioContext | null>(null);
   const prevGameRef = useRef<GameState | null>(null);
@@ -28,6 +29,7 @@ export function useGameSounds(
 
     if (!game || game.status !== 'playing') return;
     if (!prev || prev.status !== 'playing') return;
+    if (muted) return;
 
     const ac = getAudioCtx(acRef);
 
@@ -55,7 +57,7 @@ export function useGameSounds(
         playSound(ac, soundSet, 'move');
       }
     }
-  }, [game, soundSet]);
+  }, [game, soundSet, muted]);
 
   // Tick once per second when your clock is below 20 s and running
   useEffect(() => {
@@ -63,7 +65,7 @@ export function useGameSounds(
       prevClockSecRef.current = null;
       return;
     }
-    if (clockMs <= 0 || clockMs > 20_000) {
+    if (muted || clockMs <= 0 || clockMs > 20_000) {
       prevClockSecRef.current = null;
       return;
     }
@@ -73,5 +75,5 @@ export function useGameSounds(
       const urgency = 1 - clockMs / 20_000;
       playSound(getAudioCtx(acRef), soundSet, 'tick', urgency);
     }
-  }, [clockMs, game, yourSeat, soundSet]);
+  }, [clockMs, game, yourSeat, soundSet, muted]);
 }

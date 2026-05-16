@@ -3,7 +3,8 @@
 // readers agree on the wire format.
 
 import { GameEvent } from './events.js';
-import { GameResult, Seat } from './types.js';
+import { GameResult, Seat, SimulTeams } from './types.js';
+import { RatingChange } from './auth.js';
 
 export type SavedGameRecord = {
   // Stable per-game UUID. Rooms reuse `code` across rematches, so this is the
@@ -34,4 +35,28 @@ export type SavedGameRecord = {
   // The full event journal. Replay this from a fresh GameState
   // (createGameState) to reconstruct the game at any seq.
   events: GameEvent[];
+
+  // Which teams had a single simul player controlling both seats.
+  simulTeams: SimulTeams;
+};
+
+// Row returned by GET /api/users/:username/games — metadata only, no events blob.
+export type GameHistoryRow = {
+  gameId: string;
+  startedAt: number;      // ms epoch
+  endedAt: number;        // ms epoch
+  rated: boolean;
+  result: GameResult;
+  playerNames: Record<Seat, string>;
+  seats: Record<Seat, { userId: string | null }>;
+  selfSeat: Seat;
+  selfDelta: number | null; // null when unrated
+  simulTeams: SimulTeams;
+};
+
+// Full game detail returned by GET /api/games/:gameId.
+export type GameDetail = SavedGameRecord & {
+  rated: boolean;
+  seats: Record<Seat, { userId: string | null }>;
+  ratingChanges: Record<Seat, RatingChange> | null;
 };

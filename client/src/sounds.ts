@@ -1,4 +1,4 @@
-export type SoundSetKey = 'chesscom' | 'lichess' | 'wood' | 'synth' | 'bits';
+export type SoundSetKey = 'lichess' | 'wood' | 'synth' | 'bits';
 
 export type SoundSetDef = {
   key: SoundSetKey;
@@ -6,7 +6,6 @@ export type SoundSetDef = {
 };
 
 export const SOUND_SETS: SoundSetDef[] = [
-  { key: 'chesscom', label: 'Chess.com' },
   { key: 'lichess', label: 'Lichess' },
   { key: 'wood', label: 'Wood' },
   { key: 'synth', label: 'Synth' },
@@ -14,6 +13,7 @@ export const SOUND_SETS: SoundSetDef[] = [
 ];
 
 const LS_KEY = 'bh_soundset';
+const LS_MUTED_KEY = 'bh_muted';
 
 export function loadSoundSet(): SoundSetKey {
   const v = localStorage.getItem(LS_KEY) as SoundSetKey | null;
@@ -22,6 +22,14 @@ export function loadSoundSet(): SoundSetKey {
 
 export function saveSoundSet(key: SoundSetKey) {
   localStorage.setItem(LS_KEY, key);
+}
+
+export function loadMuted(): boolean {
+  return localStorage.getItem(LS_MUTED_KEY) === 'true';
+}
+
+export function saveMuted(muted: boolean) {
+  localStorage.setItem(LS_MUTED_KEY, String(muted));
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -215,103 +223,18 @@ function bitsTick(ac: AudioContext, urgency: number) {
   chip(ac, ac.currentTime, 800 + urgency * 600, 0.025, 0.16);
 }
 
-// ─── Chess.com ─────────────────────────────────────────────────────────────
-// Characteristic "snap": dominant high-frequency click, very short dry body.
-
-function chesscomMove(ac: AudioContext) {
-  const t = ac.currentTime;
-  // Crisp click transient
-  const click = noiseNode(ac, 0.025);
-  const hpf = ac.createBiquadFilter();
-  hpf.type = 'highpass';
-  hpf.frequency.value = 2800;
-  const cg = ac.createGain();
-  cg.gain.setValueAtTime(0.45, t);
-  cg.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
-  click.connect(hpf); hpf.connect(cg); cg.connect(ac.destination);
-  click.start(t);
-  // Short dry tone
-  const osc = ac.createOscillator();
-  const og = ac.createGain();
-  osc.connect(og); og.connect(ac.destination);
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(800, t);
-  osc.frequency.exponentialRampToValueAtTime(200, t + 0.07);
-  og.gain.setValueAtTime(0.28, t);
-  og.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-  osc.start(t); osc.stop(t + 0.08);
-}
-
-function chesscomCapture(ac: AudioContext) {
-  const t = ac.currentTime;
-  // Two quick snaps in rapid succession (lift + place)
-  for (let i = 0; i < 2; i++) {
-    const ti = t + i * 0.038;
-    const click = noiseNode(ac, 0.03);
-    const hpf = ac.createBiquadFilter();
-    hpf.type = 'highpass';
-    hpf.frequency.value = 2200;
-    const cg = ac.createGain();
-    cg.gain.setValueAtTime(i === 0 ? 0.35 : 0.55, ti);
-    cg.gain.exponentialRampToValueAtTime(0.001, ti + 0.03);
-    click.connect(hpf); hpf.connect(cg); cg.connect(ac.destination);
-    click.start(ti);
-
-    const osc = ac.createOscillator();
-    const og = ac.createGain();
-    osc.connect(og); og.connect(ac.destination);
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(i === 0 ? 600 : 850, ti);
-    osc.frequency.exponentialRampToValueAtTime(150, ti + 0.08);
-    og.gain.setValueAtTime(i === 0 ? 0.2 : 0.32, ti);
-    og.gain.exponentialRampToValueAtTime(0.001, ti + 0.08);
-    osc.start(ti); osc.stop(ti + 0.09);
-  }
-}
-
-function chesscomCheck(ac: AudioContext) {
-  const t = ac.currentTime;
-  // Two clean notification tones (ascending)
-  [660, 880].forEach((freq, i) => {
-    const ti = t + i * 0.12;
-    const osc = ac.createOscillator();
-    const g = ac.createGain();
-    osc.connect(g); g.connect(ac.destination);
-    osc.type = 'sine';
-    osc.frequency.value = freq;
-    g.gain.setValueAtTime(0, ti);
-    g.gain.linearRampToValueAtTime(0.3, ti + 0.008);
-    g.gain.exponentialRampToValueAtTime(0.001, ti + 0.1);
-    osc.start(ti); osc.stop(ti + 0.12);
-  });
-}
-
-function chesscomTick(ac: AudioContext, urgency: number) {
-  const t = ac.currentTime;
-  const click = noiseNode(ac, 0.015);
-  const hpf = ac.createBiquadFilter();
-  hpf.type = 'highpass';
-  hpf.frequency.value = 5000;
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0.3 + urgency * 0.15, t);
-  g.gain.exponentialRampToValueAtTime(0.001, t + 0.015);
-  click.connect(hpf); hpf.connect(g); g.connect(ac.destination);
-  click.start(t);
-}
-
 // ─── Lichess ───────────────────────────────────────────────────────────────
 // Real audio files from lichess-org/lila (AGPL), bundled in public/sounds/lichess/.
-// Check.mp3 is silence in the standard set so we use GenericNotify for check.
-// Tick uses synthesis since GenericNotify is too long to repeat every second.
+// Check uses synthesis — GenericNotify.mp3 is the game-start fanfare and is
+// jarring when triggered mid-game on every check.
 
-let _lichess: { move: HTMLAudioElement; capture: HTMLAudioElement; check: HTMLAudioElement } | null = null;
+let _lichess: { move: HTMLAudioElement; capture: HTMLAudioElement } | null = null;
 
 function getLichess() {
   if (!_lichess) {
     _lichess = {
       move: new Audio('/sounds/lichess/Move.mp3'),
       capture: new Audio('/sounds/lichess/Capture.mp3'),
-      check: new Audio('/sounds/lichess/GenericNotify.mp3'),
     };
     Object.values(_lichess).forEach((a) => { a.preload = 'auto'; });
   }
@@ -325,7 +248,23 @@ function playAudio(a: HTMLAudioElement) {
 
 function lichessMove() { playAudio(getLichess().move); }
 function lichessCapture() { playAudio(getLichess().capture); }
-function lichessCheck() { playAudio(getLichess().check); }
+
+function lichessCheck(ac: AudioContext) {
+  const t = ac.currentTime;
+  // Short two-tone ping, distinct from move/capture but not intrusive
+  [520, 660].forEach((freq, i) => {
+    const ti = t + i * 0.1;
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.connect(g); g.connect(ac.destination);
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    g.gain.setValueAtTime(0, ti);
+    g.gain.linearRampToValueAtTime(0.22, ti + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, ti + 0.09);
+    osc.start(ti); osc.stop(ti + 0.1);
+  });
+}
 
 function lichessTick(ac: AudioContext, urgency: number) {
   const t = ac.currentTime;
@@ -352,15 +291,10 @@ export function playSound(
   urgency = 0,
 ) {
   try {
-    if (set === 'chesscom') {
-      if (event === 'move') chesscomMove(ac);
-      else if (event === 'capture') chesscomCapture(ac);
-      else if (event === 'check') chesscomCheck(ac);
-      else chesscomTick(ac, urgency);
-    } else if (set === 'lichess') {
+    if (set === 'lichess') {
       if (event === 'move') lichessMove();
       else if (event === 'capture') lichessCapture();
-      else if (event === 'check') lichessCheck();
+      else if (event === 'check') lichessCheck(ac);
       else lichessTick(ac, urgency);
     } else if (set === 'wood') {
       if (event === 'move') woodMove(ac);
