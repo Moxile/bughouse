@@ -1019,8 +1019,8 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
 
         <div style={{
           borderRadius: 4,
-          boxShadow: isMyBoard && isYourTurn(boardId) && game.status === 'playing' && reviewPos === null
-            ? '0 0 0 3px rgba(100, 220, 100, 0.55)'
+          boxShadow: isMyBoard && (premoves[boardId] ?? null) !== null && reviewPos === null
+            ? '0 0 0 3px rgba(167,139,250,0.55)'
             : undefined,
           transition: 'box-shadow 0.25s ease',
         }}>
@@ -1039,17 +1039,6 @@ export function GameView({ store, send, onHome, onProfile, auth }: Props) {
             onHotkeyDrop={hotkeyDrop}
           />
         </div>
-        {isMyBoard && !isYourTurn(boardId) && (premoves[boardId] ?? null) !== null && reviewPos === null && (
-          <div style={{
-            textAlign: 'center',
-            fontSize: 11,
-            color: 'rgba(255,200,80,0.85)',
-            letterSpacing: '0.04em',
-            marginTop: 2,
-          }}>
-            Premove queued
-          </div>
-        )}
 
         {/* Bottom player card */}
         <div style={{ ...stripStyle, borderRadius: 8 }}>
