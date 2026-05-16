@@ -381,6 +381,18 @@ export class Persistence {
     `;
   }
 
+  async listSimulLeaderboard(limit = 50): Promise<UserRow[]> {
+    return this.sql<UserRow[]>`
+      SELECT id, username, email, display_name AS "displayName",
+             simul_rating AS "simulRating", simul_rating_games_played AS "simulRatingGamesPlayed",
+             username_set AS "usernameSet"
+      FROM users
+      WHERE simul_rating_games_played > 0
+      ORDER BY simul_rating DESC
+      LIMIT ${limit}
+    `;
+  }
+
   async getRatingHistory(userId: string, limit = 50): Promise<{
     gameId: string;
     ratingBefore: number;

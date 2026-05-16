@@ -38,3 +38,16 @@ export async function fetchLeaderboard(): Promise<{
   if (!res.ok) return [];
   return res.json();
 }
+
+export async function fetchSimulLeaderboard(): Promise<{
+  rank: number;
+  id: string;
+  username: string;
+  displayName: string;
+  simulRating: number;
+  simulRatingGamesPlayed: number;
+}[]> {
+  const res = await apiFetch('/api/leaderboard/simul');
+  if (!res.ok) return [];
+  return res.json();
+}

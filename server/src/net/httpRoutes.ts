@@ -126,6 +126,20 @@ export async function handleAuthRoutes(
     return true;
   }
 
+  // GET /api/leaderboard/simul
+  if (method === 'GET' && pathname === '/api/leaderboard/simul') {
+    const users = await db.listSimulLeaderboard(50);
+    json(res, 200, users.map((u, i) => ({
+      rank: i + 1,
+      id: u.id,
+      username: u.username,
+      displayName: u.displayName,
+      simulRating: u.simulRating,
+      simulRatingGamesPlayed: u.simulRatingGamesPlayed,
+    })));
+    return true;
+  }
+
   // GET /api/users/by-username/:username — public profile (no display name / email)
   const byUsernameMatch = pathname.match(/^\/api\/users\/by-username\/([^/]+)$/);
   if (method === 'GET' && byUsernameMatch) {
