@@ -370,10 +370,9 @@ export class Persistence {
     `;
   }
 
-  async listLeaderboard(limit = 50): Promise<UserRow[]> {
-    return this.sql<UserRow[]>`
-      SELECT id, username, email, display_name AS "displayName",
-             rating, rating_games_played AS "ratingGamesPlayed", username_set AS "usernameSet"
+  async listLeaderboard(limit = 50): Promise<Pick<UserRow, 'id' | 'username' | 'rating' | 'ratingGamesPlayed'>[]> {
+    return this.sql`
+      SELECT id, username, rating, rating_games_played AS "ratingGamesPlayed"
       FROM users
       WHERE rating_games_played > 0
       ORDER BY rating DESC
@@ -381,11 +380,9 @@ export class Persistence {
     `;
   }
 
-  async listSimulLeaderboard(limit = 50): Promise<UserRow[]> {
-    return this.sql<UserRow[]>`
-      SELECT id, username, email, display_name AS "displayName",
-             simul_rating AS "simulRating", simul_rating_games_played AS "simulRatingGamesPlayed",
-             username_set AS "usernameSet"
+  async listSimulLeaderboard(limit = 50): Promise<Pick<UserRow, 'id' | 'username' | 'simulRating' | 'simulRatingGamesPlayed'>[]> {
+    return this.sql`
+      SELECT id, username, simul_rating AS "simulRating", simul_rating_games_played AS "simulRatingGamesPlayed"
       FROM users
       WHERE simul_rating_games_played > 0
       ORDER BY simul_rating DESC

@@ -119,7 +119,6 @@ export async function handleAuthRoutes(
       rank: i + 1,
       id: u.id,
       username: u.username,
-      displayName: u.displayName,
       rating: u.rating,
       ratingGamesPlayed: u.ratingGamesPlayed,
     })));
@@ -133,7 +132,6 @@ export async function handleAuthRoutes(
       rank: i + 1,
       id: u.id,
       username: u.username,
-      displayName: u.displayName,
       simulRating: u.simulRating,
       simulRatingGamesPlayed: u.simulRatingGamesPlayed,
     })));

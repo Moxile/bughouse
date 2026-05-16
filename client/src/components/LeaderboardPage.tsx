@@ -8,7 +8,6 @@ type NormalEntry = {
   rank: number;
   id: string;
   username: string;
-  displayName: string;
   rating: number;
   ratingGamesPlayed: number;
 };
@@ -17,7 +16,6 @@ type SimulEntry = {
   rank: number;
   id: string;
   username: string;
-  displayName: string;
   simulRating: number;
   simulRatingGamesPlayed: number;
 };

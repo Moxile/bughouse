@@ -11,10 +11,9 @@ const SEAT_COLOR_LABEL = ['White', 'Black', 'Black', 'White'] as const;
 const SEAT_BOARD_LABEL = ['Board 1', 'Board 1', 'Board 2', 'Board 2'] as const;
 const SEAT_TEAM  = [0, 1, 0, 1] as const;
 
-// Layout order: [topLeft, topRight, bottomLeft, bottomRight]
-// topLeft=Seat1(B1 Black Team1), topRight=Seat2(B2 Black Team0)
-// bottomLeft=Seat0(B1 White Team0), bottomRight=Seat3(B2 White Team1)
-const GRID: [Seat, Seat, Seat, Seat] = [1, 2, 0, 3];
+// Team rows: Team 0 → [Seat 0 (B1 White), Seat 2 (B2 Black)]
+//            Team 1 → [Seat 1 (B1 Black), Seat 3 (B2 White)]
+const TEAM_SEATS: [Seat[], Seat[]] = [[0, 2], [1, 3]];
 
 type Props = {
   store: GameStore;
@@ -173,87 +172,97 @@ export function LobbyView({ store, code, send, onHome, onProfile, username }: Pr
           </div>
         )}
 
-        {/* Seat grid — visual two-board layout */}
+        {/* Seat grid — team-separated layout */}
         <div style={{ marginBottom: 20 }}>
-          {/* Team headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 6 }}>
-            {([1, 0] as (0 | 1)[]).map((team) => {
-              const color = TEAM_COLOR[team];
-              const label = team === 1 ? 'Team Red' : 'Team Teal';
-              const teamSeats: Seat[] = team === 0 ? [0, 2] : [1, 3];
-              const teamOccupied0 = names[teamSeats[0]!] !== null;
-              const teamOccupied1 = names[teamSeats[1]!] !== null;
-              const isSimulTeam = simulTeams[team];
-              const iAmOnTeam = yourSeats.some((s) => teamSeats.includes(s));
-              const teamFull = teamOccupied0 && teamOccupied1;
-              const canSimul = allowSimul && !isSimulTeam && !iAmOnTeam && yourSeats.length === 0 && !teamFull;
-              const mySimulTeam = isSimulTeam && iAmOnTeam;
-
-              return (
-                <div key={team}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: allowSimul ? 6 : 0 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</span>
-                    {isSimulTeam && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(167,139,250,0.8)', letterSpacing: 1, marginLeft: 2 }}>SIMUL</span>}
-                  </div>
-                  {allowSimul && (
-                    mySimulTeam ? (
-                      <button
-                        onClick={() => handleReleaseSimul(team)}
-                        style={{
-                          width: '100%', padding: '4px 0', fontSize: 10,
-                          background: 'rgba(167,139,250,0.1)', color: 'rgba(167,139,250,0.7)',
-                          border: '1px solid rgba(167,139,250,0.3)', borderRadius: 5,
-                          cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif",
-                        }}
-                      >Leave both seats</button>
-                    ) : canSimul ? (
-                      <button
-                        onClick={() => handleClaimSimul(team)}
-                        style={{
-                          width: '100%', padding: '4px 0', fontSize: 10,
-                          background: 'rgba(167,139,250,0.1)', color: 'rgba(167,139,250,0.8)',
-                          border: '1px solid rgba(167,139,250,0.3)', borderRadius: 5,
-                          cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif",
-                          fontWeight: 600,
-                        }}
-                      >Simul both seats</button>
-                    ) : (
-                      <div style={{ height: 24 }} />
-                    )
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* 2×2 grid: [Seat1, Seat2] top row (Black), [Seat0, Seat3] bottom row (White) */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {GRID.map((seat) => (
-              <SeatCard
-                key={seat}
-                seat={seat}
-                store={store}
-                yourSeat={yourSeat}
-                yourSeats={yourSeats}
-                simulTeams={simulTeams}
-                isOwner={isOwner}
-                ownerSeat={ownerSeat}
-                onClaim={handleClaim}
-                onRelease={handleRelease}
-                onReleaseSimul={handleReleaseSimul}
-                onReady={handleReady}
-                onUnready={handleUnready}
-                onKick={handleKick}
-              />
+          {/* Board column headers */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8, padding: '0 2px' }}>
+            {(['Board 1', 'Board 2'] as const).map((label) => (
+              <div key={label} style={{ textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase' }}>{label}</div>
             ))}
           </div>
 
-          {/* Board labels below */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 6 }}>
-            <div style={{ textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase' }}>Board 1</div>
-            <div style={{ textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.25)', letterSpacing: 1, textTransform: 'uppercase' }}>Board 2</div>
-          </div>
+          {([0, 1] as (0 | 1)[]).map((team, idx) => {
+            const teamSeats = TEAM_SEATS[team]!;
+            const color = TEAM_COLOR[team];
+            const label = team === 0 ? 'Team Teal' : 'Team Red';
+            const isSimulTeam = simulTeams[team];
+            const iAmOnTeam = yourSeats.some((s) => teamSeats.includes(s as Seat));
+            const teamFull = teamSeats.every((s) => names[s as Seat] !== null);
+            const canSimul = allowSimul && !isSimulTeam && !iAmOnTeam && yourSeats.length === 0 && !teamFull;
+            const mySimulTeam = isSimulTeam && iAmOnTeam;
+
+            return (
+              <React.Fragment key={team}>
+                {idx === 1 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '10px 0' }}>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: 'rgba(255,255,255,0.2)', letterSpacing: 2 }}>VS</span>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.06)' }} />
+                  </div>
+                )}
+                <div style={{
+                  background: `${color}07`,
+                  border: `1px solid ${color}28`,
+                  borderRadius: 12,
+                  padding: '10px 12px',
+                }}>
+                  {/* Team header */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>{label}</span>
+                    {isSimulTeam && <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 8, color: 'rgba(167,139,250,0.8)', letterSpacing: 1 }}>SIMUL</span>}
+                    {allowSimul && (
+                      <div style={{ marginLeft: 'auto' }}>
+                        {mySimulTeam ? (
+                          <button
+                            onClick={() => handleReleaseSimul(team)}
+                            style={{
+                              padding: '3px 10px', fontSize: 9,
+                              background: 'rgba(167,139,250,0.1)', color: 'rgba(167,139,250,0.7)',
+                              border: '1px solid rgba(167,139,250,0.3)', borderRadius: 5,
+                              cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif",
+                            }}
+                          >Leave both seats</button>
+                        ) : canSimul ? (
+                          <button
+                            onClick={() => handleClaimSimul(team)}
+                            style={{
+                              padding: '3px 10px', fontSize: 9,
+                              background: 'rgba(167,139,250,0.1)', color: 'rgba(167,139,250,0.8)',
+                              border: '1px solid rgba(167,139,250,0.3)', borderRadius: 5,
+                              cursor: 'pointer', fontFamily: "'Geist', 'Inter', sans-serif",
+                              fontWeight: 600,
+                            }}
+                          >Simul both seats</button>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                  {/* Two seats for this team */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    {teamSeats.map((seat) => (
+                      <SeatCard
+                        key={seat}
+                        seat={seat as Seat}
+                        store={store}
+                        yourSeat={yourSeat}
+                        yourSeats={yourSeats}
+                        simulTeams={simulTeams}
+                        isOwner={isOwner}
+                        ownerSeat={ownerSeat}
+                        onClaim={handleClaim}
+                        onRelease={handleRelease}
+                        onReleaseSimul={handleReleaseSimul}
+                        onReady={handleReady}
+                        onUnready={handleUnready}
+                        onKick={handleKick}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          })}
         </div>
 
         <div style={{
